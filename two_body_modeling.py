@@ -11,21 +11,25 @@ class two_body_model():
     """ Define a object that implement thermal field coupled_cluster
         method and thermal NOE method
         for GS and thermal property calculations for two-electron Hamiltonian """
-    def __init__(self, E_0, Fock, S, V_eri, n_occ):
+    def __init__(self, E_0, H, V_eri, n_occ):
         """
         E_0: energy expectation value
-        Fock: Fock matrix
-        S: overlap matrix
-        V_eri: 2-electron integral
+        H: core 1-electron integral
+        V_eri: 2-electron integral (chemist's notation)
         M: dimension of MO basis
+        (all electron integrals are represented in MO basis)
         """
         print("***<start of input parameters>***")
         self.E_0 = E_0
-        self.F = Fock
         self.V = V_eri
         self.n_occ = n_occ
+
+        # construct Fock matrix (from 1e and 2e integral)
+        self.F = H.copy()
+        self.F += 2 * np.einsum('iipq->pq', self.V)
+        self.F -= 2 * np.einsum('iqpi->pq', self.V)
+
         self.M = self.F.shape[0]
-        self.S = S
 
         # f and f_bar defines contraction in thermal NOE
         self.f = self.n_occ / self.M
@@ -74,15 +78,14 @@ class two_body_model():
         beta = 1. / (self.kb * T)
         print("beta:{:.3f}".format(beta))
 
-        # Diagonalize one-electron Hamiltonian (FC = SCE)
-        E_mf, V_mf = eigh(self.F, self.S)
-        print("Eigenvalue of Fock matrix\n:{:}".format(E_mf))
-
+        # Diagonalize Fock matrix
+        E_mf, V_mf = np.linalg.eigh(self.F)
+        print("Eigenvalue of Fock matrix:\n{:}".format(E_mf))
         # calculate Femi-Dirac occupation number with chemical potential that fixex total number of electron
-        n_p, mu = self.Cal_mu_FD(E_mf, beta)
-        # n_p = self.f * np.ones(self.M) # assume zero beta occupation number
+        # n_p, mu = self.Cal_mu_FD(E_mf, beta)
+        n_p = self.f * np.ones(self.M) # assume zero beta occupation number
         print("Fermi-Dirac Occupation number:\n{:}".format(n_p))
-        print("initial chemical potential:{:.3f}".format(mu))
+        # print("initial chemical potential:{:.3f}".format(mu))
 
         # Bogoliubov transform the Hamiltonian from physical space to quasi-particle representation
         sin_theta = np.sqrt(n_p)
@@ -102,6 +105,11 @@ class two_body_model():
         print("F_tilde_ai:\n{:}".format(self.F_tilde['ai'].shape))
         print("F_tilde_ia:\n{:}".format(self.F_tilde['ia'].shape))
         print("F_tilde_ab:\n{:}".format(self.F_tilde['ab'].shape))
+
+        self.n_tilde = {"ij": np.einsum('i,j,ij->ij', self.sin_theta, self.sin_theta, np.eye(self.M)),
+                        "ai": np.einsum('a,i,ai->ai', self.cos_theta, self.sin_theta, np.eye(self.M)),
+                        "ia": np.einsum('i,a,ia->ia', self.sin_theta, self.cos_theta, np.eye(self.M)),
+                        "ab": np.einsum('a,b,ab->ab', self.cos_theta, self.cos_theta, np.eye(self.M))}
 
         # 2-electron Hamiltonian (16 terms)
         self.V_tilde = {"ijkl": np.einsum('i,j,k,l,ijkl->ijkl', sin_theta, sin_theta, sin_theta, sin_theta, self.V),
@@ -139,152 +147,14 @@ class two_body_model():
         print("V_tilde_aijk:\n{:}".format(self.V_tilde['aijk'].shape))
         print("V_tilde_iajb:\n{:}".format(self.V_tilde['iajb'].shape))
 
+        # determine the constant shift
+        self.E_0 = 2 * np.trace(self.F_tilde['ij'])
+        self.E_0 += 2 * np.einsum('iijj->', self.V_tilde['ijkl'])
+        self.E_0 -= 2 * np.einsum('ijji->', self.V_tilde['ijkl'])
+
         return
 
-    def R_0(self, T):
-        """ constant residue (energy equation) """
-        R = 0.
-        R += self.one_fourth * np.einsum('ijab,abij->', self.V_tilde['ijab'], T['abij'])
-        R += np.einsum('ia,ai->', self.F_tilde['ia'], T['ai'])
-        R += self.one_half * np.einsum('ijab,ai,bj->', self.V_tilde['ijab'], T['ai'], T['ai'])
-        return R_0
-
-    def R_1(self, T):
-        """ singles residue """
-        R = np.zeros([self.M, self.M])
-        R += self.F_tilde['ai']
-        R += np.einsum('kc,acik->ai', self.F_tilde['ia'], T['abij'])
-        R += self.one_half * np.einsum('akcd,cdik->ai', self.V_tilde['aibc'], T['abij'])
-        R -= self.one_half * np.einsum('klic,ackl->ai', self.V_tilde['ijka'], T['abij'])
-        R += np.einsum('ac,ci->ai', self.F_tilde['ab'], T['ai'])
-        R -= np.einsum('ki,ak->ai', self.F_tilde['ij'], T['ai'])
-        R += np.einsum('akic,ck->ai', self.V_tilde['aijb'], T['ai'])
-        R -= self.one_half * np.einsum('klcd,ci,adkl->ai', self.V_tilde['ijab'], T['ai'], T['abij'])
-        R -= self.one_half * np.einsum('klcd,ak,cdil->ai', self.V_tilde['ijab'], T['ai'], T['abij'])
-        R += np.einsum('klcd,ck,dali->ai', self.V_tilde['ijab'], T['ai'], T['iabij'])
-        R -= np.einsum('kc,ci,ak->ai', self.F_tilde['ia'], T['ai'], T['ai'])
-        R += np.einsum('akcd,ci,dk->ai', self.V_tilde['aibc'], T['ai'], T['ai'])
-        R -= np.einsum('klic,ak,cl->ai', self.V_tilde['ijka'], T['ai'], T['ai'])
-        R += np.einsum('klcd,ci,ak,dl->ai', self.V_tilde['ijab'], T['ai'], T['ai'], T['ai'])
-
-        return R
-
-    def R_2(self, T):
-        """ double residue"""
-        R = np.zeros([self.M, self.M, self.M, self.M])
-
-        def Cal_CCD(T):
-            """calculate CCD residue"""
-            def Cal_perm(T):
-                """calculate the four fold permutation term in CCD contribution"""
-                R += np.einsum('kbcj,acik->abij', self.V_tilde['iabj'], T['abij'])
-                R += np.einsum('kbci,acjk->abij', self.V_tilde['iabj'], T['abij'])
-                R += np.einsum('kacj,bcik->abij', self.V_tilde['iabj'], T['abij'])
-                R += np.einsum('kaci,bcjk->abij', self.V_tilde['iabj'], T['abij'])
-
-                return
-
-            Cal_perm(T)
-
-            R += self.V_tilde['abij']
-
-            R += np.einsum('bc,acij->abij', self.F_tilde['ab'], T['abij'])
-            R -= np.einsum('ac,bcij->abij', self.F_tilde['ab'], T['abij'])
-
-            R -= np.einsum('kj,abik->abij', self.F_tilde['ij'], T['abij'])
-            R += np.einsum('ki,abjk->abij', self.F_tilde['ij'], T['abij'])
-
-            R += self.one_half * np.einsum('abcd,cdij->abij', self.V_tilde['abcd'], T['abij'])
-
-            R += self.one_half * np.einsum('ijkl,abkl->abij', self.V_tilde['ijkl'], T['abij'])
-
-            R += self.one_fourth * np.einsum('klcd,cdij,abkl->abij', self.V_tilde['ijab'], T['abij'], T['abij'])
-
-            R += np.einsum('klcd,acik,bdjl->abij', self.V_tilde['ijab'], T['abij'], T['abij'])
-            R -= np.einsum('klcd,acjk,bdil->abij', self.V_tilde['ijab'], T['abij'], T['abij'])
-
-            R -= self.one_half * np.einsum('klcd,dcik,ablj->abij', self.V_tilde['ijab'], T['abij'], T['abij'])
-            R += self.one_half * np.einsum('klcd,dcjk,abli->abij', self.V_tilde['ijab'], T['abij'], T['abij'])
-
-            R -= self.one_half * np.einsum('klcd,aclk,dbij->abij', self.V_tilde['ijab'], T['abij'], T['abij'])
-            R += self.one_half * np.einsum('klcd,bclk,daij->abij', self.V_tilde['ijab'], T['abij'], T['abij'])
-
-            return
-
-        def Cal_perm(T):
-            """calculate the term that has four fold permutations"""
-            R += np.einsum('akcd,ci,dbkj->abij', self.V_tilde['aibc'], T['ai'], T['abij'])
-            R += np.einsum('akcd,cj,dbki->abij', self.V_tilde['aibc'], T['ai'], T['abij'])
-            R += np.einsum('bkcd,ci,dakj->abij', self.V_tilde['aibc'], T['ai'], T['abij'])
-            R += np.einsum('bkcd,cj,daki->abij', self.V_tilde['aibc'], T['ai'], T['abij'])
-
-            R -= np.einsum('klic,ak,cblj->abij', self.V_tilde['ijka'], T['ai'], T['abij'])
-            R -= np.einsum('kljc,ak,cbli->abij', self.V_tilde['ijka'], T['ai'], T['abij'])
-            R -= np.einsum('klic,bk,calj->abij', self.V_tilde['ijka'], T['ai'], T['abij'])
-            R -= np.einsum('kljc,bk,cali->abij', self.V_tilde['ijka'], T['ai'], T['abij'])
-
-            R -= np.einsum('kbcj,ci,ak->abij', self.V_tilde['iabj'], T['ai'], T['ai'])
-            R -= np.einsum('kbci,cj,ak->abij', self.V_tilde['iabj'], T['ai'], T['ai'])
-            R -= np.einsum('kacj,ci,bk->abij', self.V_tilde['iabj'], T['ai'], T['ai'])
-            R -= np.einsum('kaci,cj,bk->abij', self.V_tilde['iabj'], T['ai'], T['ai'])
-
-            R -= np.einsum('klcj,ci,ak,bl->abij', self.V_tilde['ijak'], T['ai'], T['ai'], T['ai'], T['ai'])
-            R -= np.einsum('klci,cj,ak,bl->abij', self.V_tilde['ijak'], T['ai'], T['ai'], T['ai'], T['ai'])
-            R -= np.einsum('klcj,ci,bk,al->abij', self.V_tilde['ijak'], T['ai'], T['ai'], T['ai'], T['ai'])
-            R -= np.einsum('klci,cj,bk,al->abij', self.V_tilde['ijak'], T['ai'], T['ai'], T['ai'], T['ai'])
-
-            return
-        # calculate CCD residue
-        Cal_CCD(T)
-        Cal_perm(T)
-
-        R += np.einsum('abcj,ci->abij', self.V_tilde['abci'], T['ai'])
-        R -= np.einsum('abci,cj->abij', self.V_tilde['abci'], T['ai'])
-
-        R -= np.einsum('kbij,ak->abij', self.V_tilde['iajk'], T['ai'])
-        R += np.einsum('kaij,bk->abij', self.V_tilde['iajk'], T['ai'])
-
-        R -= np.einsum('kc,ci,abkj->abij', self.F_tilde['ia'], T['ai'], T['abij'])
-        R += np.einsum('kc,cj,abki->abij', self.F_tilde['ia'], T['ai'], T['abij'])
-
-        R -= np.einsum('kc,ak,cbij->abij', self.F_tilde['ia'], T['ai'], T['abij'])
-        R += np.einsum('kc,bk,caij->abij', self.F_tilde['ia'], T['ai'], T['abij'])
-
-        R -= self.one_half * np.einsum('kbcd,ak,cdij->abij', self.V_tilde['iabc'], T['ai'], T['ai'], T['ai'])
-        R += self.one_half * np.einsum('kacd,bk,cdij->abij', self.V_tilde['iabc'], T['ai'], T['ai'], T['ai'])
-
-        R += self.one_half * np.einsum('klcj,aci,abkl->abij', self.V_tilde['ijak'], T['ai'], T['abij'])
-        R -= self.one_half * np.einsum('klci,acj,abkl->abij', self.V_tilde['ijak'], T['ai'], T['abij'])
-
-        R += np.einsum('kacd,ck,dbij->abij', self.V_tilde['iabc'], T['ai'], T['abij'])
-        R -= np.einsum('kbcd,ck,daij->abij', self.V_tilde['iabc'], T['ai'], T['abij'])
-
-        R -= np.einsum('klci,ck,ablj->abij', self.V_tilde['ijak'], T['ai'], T['abij'])
-        R += np.einsum('klcj,ck,abli->abij', self.V_tilde['ijak'], T['ai'], T['abij'])
-
-        R += np.einsum('abcd,ci,dj->abij', self.V_tilde['abcd'], T['ai'], T['ai'])
-
-        R += np.einsum('klij,ak,bl->abij', self.V_tilde['ijkl'], T['ai'], T['ai'])
-
-        R += self.one_half * np.einsum('klcd,ci,dj,abkl->abij', self.V_tilde['ijab'], T['ai'], T['ai'], T['abij'])
-
-        R += self.one_half * np.einsum('klcd,ak,bl,cdij->abij', self.V_tilde['ijab'], T['ai'], T['ai'], T['abij'])
-
-        R -= np.einsum('klcd,ck,di,ablj->abij', self.V_tilde['ijab'], T['ai'], T['ai'], T['abij'])
-        R += np.einsum('klcd,ck,dj,abli->abij', self.V_tilde['ijab'], T['ai'], T['ai'], T['abij'])
-
-        R -= np.einsum('klcd,ck,al,dbij->abij', self.V_tilde['ijab'], T['ai'], T['ai'], T['abij'])
-        R += np.einsum('klcd,ck,bl,daij->abij', self.V_tilde['ijab'], T['ai'], T['ai'], T['abij'])
-
-        R += np.einsum('kbcd,ci,ak,dj->abij', self.V_tilde['iabc'], T['ai'], T['ai'], T['ai'])
-        R -= np.einsum('kacd,ci,bk,dj->abij', self.V_tilde['iabc'], T['ai'], T['ai'], T['ai'])
-
-        R += np.einsum('klcj,ci,ak,bl->abij', self.V_tilde['ijak'], T['ai'], T['ai'], T['ai'])
-        R -= np.einsum('klci,cj,ak,bl->abij', self.V_tilde['ijak'], T['ai'], T['ai'], T['ai'])
-
-        R += np.einsum('klcd,ci,dj,ak,bl-abij', self.V_tilde['ijab'], T['ai'], T['ai'], T['ai'], T['ai'])
-
-    def thermal_field_coupled_cluster(self, T_final, N):
+    def thermal_field_coupled_cluster(self, T_final, N, chemical_potential=True):
         """conduct imaginary time integration to calculate thermal properties"""
         # calculation initial T amplitude
 
@@ -343,24 +213,40 @@ class two_body_model():
             # energy equation
             E = energy(T['t_1'], T['t_2'], self.F_tilde, self.V_tilde)
 
+            # apply constant shift to energy equation
+            E += self.E_0
 
             # compute RDM
-            RDM = np.einsum('p,q,pq->pq', self.sin_theta, self.sin_theta, np.eye(self.M)) +\
-                  np.einsum('q,p,qp->pq', self.cos_theta, self.sin_theta, T['t_1'])
+
+            # 1-RDM
+            RDM_1 = np.einsum('p,q,pq->pq', self.sin_theta, self.sin_theta, np.eye(self.M)) +\
+                    np.einsum('q,p,qp->pq', self.cos_theta, self.sin_theta, T['t_1'])
+            # 2-RDM (chemist's notation)
+            RDM_2 = np.einsum('pr,qs->prqs', RDM_1, RDM_1)
+            RDM_2 -= np.einsum('ps,qr->prqs', RDM_1, RDM_1)
+            RDM_2 += np.einsum('r,s,p,q,rpsq->prqs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T['t_2'])
 
             # compute occupation number
-            occ, nat = np.linalg.eigh(RDM)
+            occ, nat = np.linalg.eigh(RDM_1)
 
             # number of electron
-            n_el = np.trace(RDM)
+            n_el = np.trace(RDM_1)
 
-            # introduce chemical potential to correct number of electrons
-            # delta = self.Cal_R_1_TF(T, flag=True)
-            # mu = np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, R_1)
-            # mu /= np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, delta)
+            if chemical_potential:
+                # compute chemical potential
+                delta_1, delta_2 = \
+                                update_amps(T['t_1'], T['t_2'], self.n_tilde, np.zeros([self.M, self.M, self.M, self.M]), flag=True)
+                mu = np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, R_1)
+                mu /= np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, delta_1)
 
-            # chemical protential corrections on CC residue
-            # R_1 -= mu * delta
+                # apply chemical potential to CC residue
+                R_1 -= mu * delta_1
+                R_2 -= mu * delta_2
+
+            if chemical_potential:
+                T['t_0'] -= (E - mu * self.n_occ) * dtau
+            else:
+                T['t_0'] -= E * dtau
 
             # update CC amplitude
             T['t_2'] -= R_2 * dtau
@@ -371,9 +257,10 @@ class two_body_model():
             # print and store properties along the propagation
             if i != 0:
                 print("Temperature: {:.3f} K".format(1. / (self.kb * beta_tmp)))
-                print("1-RDM:\n{:}".format(RDM))
+                print("max 1-RDM:\n{:.3f}".format(abs(RDM_1).max()))
+                print("max 2-RDM:\n{:.3f}".format(abs(RDM_2).max()))
                 print("number of electron:{:.3f}".format(n_el))
-                # print("chemical potential:{:} cm-1".format(mu))
+                print("chemical potential:{:} cm-1".format(mu))
                 print("occupation number:\n{:}".format(occ))
                 print("thermal internal energy:{:.3f}".format(E))
 
