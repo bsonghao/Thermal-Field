@@ -50,6 +50,6 @@ model = two_body_model(E_0, hcore_mo, eri_mo, n_el)
 # thermal field transform
 model.thermal_field_transform(T=100)
 # TFCC imaginary time integration
-model.thermal_field_coupled_cluster(T_final=1e6, N=10000, chemical_potential=True)
+model.thermal_field_coupled_cluster(T_final=1e5, N=10000, chemical_potential=True)
 # plot thermal properties
 model.Plot_thermal()

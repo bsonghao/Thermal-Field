@@ -69,7 +69,10 @@ class two_body_model():
             print("NEWTON PROCEDURE STEP {:d}:".format(i))
             print("chemical potential mu:{:.3f}".format(mu))
             print("n(mu):{:.3f}".format(n_mu + self.n_occ))
-
+            if i > 100:
+                print("Warning: Newtonain procedure does not converge with in 100 iterations! return zero beta reference state")
+                n_p = self.f * np.ones(self.M)
+                mu = - np.log(1./self.f - 1)
         return n_p, mu
 
     def thermal_field_transform(self, T):
@@ -82,10 +85,10 @@ class two_body_model():
         E_mf, V_mf = np.linalg.eigh(self.F)
         print("Eigenvalue of Fock matrix:\n{:}".format(E_mf))
         # calculate Femi-Dirac occupation number with chemical potential that fixex total number of electron
-        # n_p, mu = self.Cal_mu_FD(E_mf, beta)
-        n_p = self.f * np.ones(self.M) # assume zero beta occupation number
+        n_p, mu = self.Cal_mu_FD(E_mf, beta)
+
         print("Fermi-Dirac Occupation number:\n{:}".format(n_p))
-        # print("initial chemical potential:{:.3f}".format(mu))
+        print("initial chemical potential:{:.3f}".format(mu))
 
         # Bogoliubov transform the Hamiltonian from physical space to quasi-particle representation
         sin_theta = np.sqrt(n_p)
@@ -156,6 +159,28 @@ class two_body_model():
 
     def thermal_field_coupled_cluster(self, T_final, N, chemical_potential=True):
         """conduct imaginary time integration to calculate thermal properties"""
+        def correct_occupation_number(occ, nat):
+            """correct occupation number is n_p <0 or n_p > 1"""
+            for i, n in enumerate(occ):
+                if n < 0:
+                    occ[i] = 0.
+                if n > 1:
+                    occ[i] = 1.
+            # correct occupation number
+            c_p = occ * (np.ones_like(occ) - occ)
+            lmd = (self.n_occ - sum(occ)) / sum(c_p)
+            occ += lmd * c_p
+            print("occ:{:}".format(occ))
+            # inverse mapping occupation number to density matrix
+            # RDM_1 = np.dot(np.dot(nat, occ), nat.transpose())
+            # map T amplitude from density matrix
+            # t_1 = np.zeros([self.M, self.M])
+            # t_1 += RDM_1.transpose()
+            # t_1 -= np.einsum('p,q,pq->qp', self.sin_theta, self.sin_theta, np.eye(self.M))
+            # t_1 /= np.einsum('q,p->qp', self.cos_theta, self.sin_theta)
+
+            return occ
+
         # calculation initial T amplitude
 
         # compute reduced density matrix at zero beta
@@ -172,10 +197,10 @@ class two_body_model():
 
         ## mapping T_2
         t_2 = np.zeros([self.M, self.M, self.M, self.M])
-        t_2 += RDM_2.transpose(2, 3, 0, 1)
-        t_2 -= np.einsum('pr,qs->rspq', RDM_1, RDM_1)
-        t_2 += np.einsum('ps,qr->rspq', RDM_1, RDM_1)
-        t_2 /= np.einsum('r,s,p,q->rspq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta)
+        # t_2 += RDM_2.transpose(2, 3, 0, 1)
+        # t_2 -= np.einsum('pr,qs->rspq', RDM_1, RDM_1)
+        # t_2 += np.einsum('ps,qr->rspq', RDM_1, RDM_1)
+        # t_2 /= np.einsum('r,s,p,q->rspq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta)
 
         ## mapping T_1
         t_1 = np.zeros([self.M, self.M])
@@ -216,22 +241,6 @@ class two_body_model():
             # apply constant shift to energy equation
             E += self.E_0
 
-            # compute RDM
-
-            # 1-RDM
-            RDM_1 = np.einsum('p,q,pq->pq', self.sin_theta, self.sin_theta, np.eye(self.M)) +\
-                    np.einsum('q,p,qp->pq', self.cos_theta, self.sin_theta, T['t_1'])
-            # 2-RDM (chemist's notation)
-            RDM_2 = np.einsum('pr,qs->prqs', RDM_1, RDM_1)
-            RDM_2 -= np.einsum('ps,qr->prqs', RDM_1, RDM_1)
-            RDM_2 += np.einsum('r,s,p,q,rpsq->prqs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T['t_2'])
-
-            # compute occupation number
-            occ, nat = np.linalg.eigh(RDM_1)
-
-            # number of electron
-            n_el = np.trace(RDM_1)
-
             if chemical_potential:
                 # compute chemical potential
                 delta_1, delta_2 = \
@@ -253,6 +262,28 @@ class two_body_model():
             T['t_1'] -= R_1 * dtau
             T['t_0'] -= E * dtau
             # (E - mu * self.n_occ) * dtau
+
+            # compute RDM
+
+            # 1-RDM
+            RDM_1 = np.einsum('p,q,pq->pq', self.sin_theta, self.sin_theta, np.eye(self.M)) +\
+                    np.einsum('q,p,qp->pq', self.cos_theta, self.sin_theta, T['t_1'])
+            # 2-RDM (chemist's notation)
+            RDM_2 = np.einsum('pr,qs->prqs', RDM_1, RDM_1)
+            RDM_2 -= np.einsum('ps,qr->prqs', RDM_1, RDM_1)
+            RDM_2 += np.einsum('r,s,p,q,rpsq->prqs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T['t_2'])
+
+            # compute occupation number
+            occ, nat = np.linalg.eigh(RDM_1)
+
+            # number of electron
+            n_el = np.trace(RDM_1)
+
+            if min(occ) < 0 or max(occ) > 1:
+                # add correction to t_1 if occupation number become abnormal
+                T['t_1'] = correct_occupation_number(occ, nat)
+                # break
+
 
             # print and store properties along the propagation
             if i != 0:
