@@ -5,6 +5,7 @@ import pandas as pd
 from math import factorial, isclose
 from scipy.linalg import eigh
 from CC_residue import *
+from scipy.integrate import solve_ivp
 
 
 class two_body_model():
@@ -150,8 +151,60 @@ class two_body_model():
 
         return
 
-    def thermal_field_coupled_cluster(self, T_final, N, chemical_potential=True):
-        """conduct imaginary time integration to calculate thermal properties"""
+    def ravel_T_tensor(self, T):
+        """Flatten the T tensor to feed into RK integrator"""
+        y_tensor = np.concatenate(
+            (
+              np.array([T['t_0']]), T['t_1'].ravel(), T['t_2'].ravel()
+            )
+        )
+
+        return y_tensor
+
+    def unravel_T_tensor(self, y_tensor):
+        """Restore the original shape of T tensor"""
+        M = self.M
+        # restore z tensor
+
+        # constant term
+        start_constant_slice_index = 0
+        end_constant_slice_index = start_constant_slice_index + 1
+        t_0 = y_tensor[0]
+
+        # single term
+        start_linear_slice_index = end_constant_slice_index
+        end_linear_slice_index = start_linear_slice_index + M*M
+        t_1 = np.reshape(
+                    y_tensor[start_linear_slice_index: end_linear_slice_index],
+                    newshape=(M, M)
+        )
+
+        # double term
+        start_quadratic_slice_index = end_linear_slice_index
+        end_quadratic_slice_index = start_quadratic_slice_index + M * M * M * M
+        t_2 = np.reshape(
+                    y_tensor[start_quadratic_slice_index: end_quadratic_slice_index],
+                    newshape=(M, M, M, M)
+        )
+
+        T = {"t_0": t_0, "t_1": t_1, "t_2": t_2}
+
+        return T
+
+    def _print_integration_progress(self, tau, T_final, Z, E, mu, n_el, occ):
+        """ Prints to stdout every 1e4 steps or if current fs value is a multiple of (0.1 * `t_final`). """
+        if tau != 0:
+            print(f"On integration step at {1./ (self.kb * tau):>9.4f} K")
+            print("Z:{:.5f}".format(Z))
+            print("E:{:.5f} hartree".format(E))
+            print("mu:{:.5f} hartree".format(mu))
+            print("Z:{:.5f}".format(n_el))
+            print("occupation number:\n{:}".format(occ))
+
+        return
+
+    def _rk45_solve_ivp_integration_function(self, tau, y_tensor, T_final, chemical_potential=True):
+        """ Integration function used by `solve_ivp` integrator inside `rk45_integration` method."""
         def correct_occupation_number(occ, nat):
             """correct occupation number is n_p <0 or n_p > 1"""
             for i, n in enumerate(occ):
@@ -163,157 +216,173 @@ class two_body_model():
             c_p = occ * (np.ones_like(occ) - occ)
             lmd = (self.n_occ - sum(occ)) / sum(c_p)
             occ += lmd * c_p
-            print("occ:{:}".format(occ))
-
+            # print("occ:{:}".format(occ))
             return occ
 
-        # calculation initial T amplitude
+        # restore the original shape of T tensor
+        T = self.unravel_T_tensor(y_tensor)
 
-        # compute reduced density matrix at zero beta
-        ## 1-RDM
-        RDM_1 = np.eye(self.M) * self.f
+        # compute properties for CC amplitude
+
+        # 1-RDM
+        RDM_1 = np.einsum('p,q,pq->pq', self.sin_theta, self.sin_theta, np.eye(self.M)) +\
+                np.einsum('q,p,qp->pq', self.cos_theta, self.sin_theta, T['t_1'])
+        # compute occupation number and store them
+        occ, nat = np.linalg.eigh(RDM_1)
+        if min(occ) < 0 or max(occ) > 1:
+            # add correction when occupation number become abnormal
+            occ = correct_occupation_number(occ, nat)
+        self.n_p.append((tau, occ))
+
+        # compute partition function
+        self.Z.append((tau, np.exp(T['t_0'])))
+
+        # update CC amplitudes
+        # amplitude equation
+        R_1, R_2 = update_amps(T['t_1'], T['t_2'], self.F_tilde, self.V_tilde)
+        # energy equation
+        R_0 = energy(T['t_1'], T['t_2'], self.F_tilde, self.V_tilde)
+        # apply constant shift to energy equation
+        R_0 += self.E_HF
+        self.E.append((tau, R_0))
+
+        # total number of electrons
+        self.n_el.append((tau, np.sum(occ)))
+
+        if chemical_potential:
+            # compute chemical potential
+            delta_1, delta_2 = \
+                            update_amps(T['t_1'], T['t_2'], self.n_tilde, np.zeros([self.M, self.M, self.M, self.M]), flag=True)
+            mu = np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, R_1)
+            mu /= np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, delta_1)
+
+            # apply chemical potential to CC residue
+            R_1 -= mu * delta_1
+            R_2 -= mu * delta_2
+            R_0 -= mu * self.n_occ
+            self.mu.append((tau, mu))
+
+        # print process
+        self._print_integration_progress(tau, T_final, self.Z[-1][1], self.E[-1][1], mu, self.n_el[-1][1], occ)
+        R = {"t_0": -R_0, "t_1": -R_1, "t_2": -R_2}
+
+        delta_y_tensor = self.ravel_T_tensor(R)
+
+        return delta_y_tensor
+
+    def _postprocess_rk45_integration_results(self, sol):
+        """process and store data for thermal properties"""
+        # convert imaginary time to temperature
+        self.T_cc = 1. / (self.kb * sol.t[1:])
+
+        # partition function
+        self.Z_cc = np.zeros_like(sol.t)
+        Z_dic = {z[0]: z[1] for z in self.Z}
+        for idx, t in enumerate(sol.t):
+            self.Z_cc[idx] = Z_dic[t]
+
+        # internal energy
+        self.E_cc = np.zeros_like(sol.t)
+        E_dic = {z[0]: z[1] for z in self.E}
+        for idx, t in enumerate(sol.t):
+            self.E_cc[idx] = E_dic[t]
+
+        # chemical potential
+        self.mu_cc = np.zeros_like(sol.t)
+        mu_dic = {z[0]: z[1] for z in self.mu}
+        for idx, t in enumerate(sol.t):
+            self.mu_cc[idx] = mu_dic[t]
+
+        # number of electrons
+        self.n_el_cc = np.zeros_like(sol.t)
+        n_el_dic = {z[0]: z[1] for z in self.n_el}
+        for idx, t in enumerate(sol.t):
+            self.n_el_cc[idx] = n_el_dic[t]
+
+        # occupation number
+        self.n_p_cc = np.zeros([len(sol.t), self.M])
+
+        N_dic = {N[0]: N[1] for N in self.n_p}
+        for idx, t in enumerate(sol.t):
+            self.n_p_cc[idx, :] = N_dic[t]
 
 
-
-        ## 2-RDM (in chemist's notation)
-        RDM_2 = np.zeros([self.M, self.M, self.M, self.M])
-        # for p in range(self.M):
-            # for q in range(self.M):
-                # RDM_2[p, p, q, q] = (self.n_occ - 1) / self.M * self.f
-
-        # mapping initial T amplitudes from RDMs
-
-        ## mapping T_2
-        t_2 = np.zeros([self.M, self.M, self.M, self.M])
-        # t_2 += RDM_2.transpose(2, 3, 0, 1)
-        # t_2 -= np.einsum('pr,qs->rspq', RDM_1, RDM_1)
-        # t_2 += np.einsum('ps,qr->rspq', RDM_1, RDM_1)
-        # t_2 /= np.einsum('r,s,p,q->rspq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta)
-
-        ## mapping T_1
-        t_1 = np.zeros([self.M, self.M])
-        t_1 += RDM_1.transpose()
-        t_1 -= np.einsum('p,q,pq->qp', self.sin_theta, self.sin_theta, np.eye(self.M))
-        t_1 /= np.einsum('q,p->qp', self.cos_theta, self.sin_theta)
-
-        # map initial constant amplitude (at zero beta)
-        f = self.f
-        t_0 = self.M * np.log(1 + f / (1 - f))
-
-        # store T amplitude in a dictionary
-        T = {"t_2": t_2, "t_1": t_1, "t_0": t_0}
-
-        # compute final beta
-        beta_final = 1. / (self.kb * T_final)
-
-        # initial beta (starting point of the integration)
-        beta_tmp = 0.
-
-        dtau = (beta_final - beta_tmp) / N
-
-        beta_grid = np.linspace(beta_tmp + dtau, beta_final, N-1)
-        self.T_grid = 1. / (self.kb * beta_grid)
-        self.E_th = []
-        self.Z_th = []
-        self.n_el_th = []
-        self.mu_th = []
-        self.occ = []
-
-        # imaginary propagation
-        for i in range(N):
-            # amplitude equation
-            R_1, R_2 = update_amps(T['t_1'], T['t_2'], self.F_tilde, self.V_tilde)
-            # energy equation
-            E = energy(T['t_1'], T['t_2'], self.F_tilde, self.V_tilde)
-
-            # apply constant shift to energy equation
-            E += self.E_HF
-
-            if chemical_potential:
-                # compute chemical potential
-                delta_1, delta_2 = \
-                                update_amps(T['t_1'], T['t_2'], self.n_tilde, np.zeros([self.M, self.M, self.M, self.M]), flag=True)
-                mu = np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, R_1)
-                mu /= np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, delta_1)
-
-                # apply chemical potential to CC residue
-                R_1 -= mu * delta_1
-                R_2 -= mu * delta_2
-
-            if chemical_potential:
-                T['t_0'] -= (E - mu * self.n_occ) * dtau
-            else:
-                T['t_0'] -= E * dtau
-
-            # update CC amplitude
-            T['t_2'] -= R_2 * dtau
-            T['t_1'] -= R_1 * dtau
-            T['t_0'] -= E * dtau
-            # (E - mu * self.n_occ) * dtau
-
-            # compute RDM
-
-            # 1-RDM
-            RDM_1 = np.einsum('p,q,pq->pq', self.sin_theta, self.sin_theta, np.eye(self.M)) +\
-                    np.einsum('q,p,qp->pq', self.cos_theta, self.sin_theta, T['t_1'])
-            # 2-RDM (chemist's notation)
-            RDM_2 = np.einsum('pr,qs->prqs', RDM_1, RDM_1)
-            RDM_2 -= np.einsum('ps,qr->prqs', RDM_1, RDM_1)
-            RDM_2 += np.einsum('r,s,p,q,rpsq->prqs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T['t_2'])
-
-            # compute occupation number
-            occ, nat = np.linalg.eigh(RDM_1)
-
-            if min(occ) < 0 or max(occ) > 1:
-                # add correction when occupation number become abnormal
-                occ = correct_occupation_number(occ, nat)
-                # break
-
-            # number of electron
-            n_el = sum(occ)
-
-            # print and store properties along the propagation
-            if i != 0:
-                print("Temperature: {:.3f} K".format(1. / (self.kb * beta_tmp)))
-                print("max 1-RDM:\n{:.3f}".format(abs(RDM_1).max()))
-                print("max 2-RDM:\n{:.3f}".format(abs(RDM_2).max()))
-                print("number of electron:{:.3f}".format(n_el))
-                print("chemical potential:{:} cm-1".format(mu))
-                print("occupation number:\n{:}".format(occ))
-                print("thermal internal energy:{:.3f}".format(E))
-
-                # store thermal internal energy
-                self.E_th.append(E)
-                # store chemical potential
-                self.mu_th.append(mu)
-                # store total number of electrons
-                self.n_el_th.append(n_el)
-                # store partition function
-                self.Z_th.append(np.exp(T['t_0']))
-                # store occupation number
-                self.occ.append(occ)
-
-                # break
-
-            beta_tmp += dtau
-
-        # store thermal property data
-        thermal_prop = {"T": self.T_grid, "Z": self.Z_th, "mu": self.mu_th,
-                        "U": self.E_th, "n_el": self.n_el_th}
+        # store thermal property data in csv file
+        thermal_prop = {"T": self.T_cc, "Z": self.Z_cc[1:], "mu": self.mu_cc[1:],
+                        "U": self.E_cc[1:], "n_el": self.n_el_cc[1:]}
 
         df = pd.DataFrame(thermal_prop)
         df.to_csv("thermal_properties_TFCC.csv", index=False)
 
         # store occupation number data (from CC)
-        occ_dic = {"T": self.T_grid}
+        occ_dic = {"T": self.T_cc}
         for i in range(self.M):
             occ_data = []
-            for j in range(len(self.T_grid)):
-                occ_data.append(self.occ[j][i])
+            for j in range(len(sol.t)):
+                if j != 0:
+                    occ_data.append(self.n_p_cc[j][i])
             occ_dic[i] = occ_data
-
         df = pd.DataFrame(occ_dic)
         df.to_csv("occupation_number_TFCC.csv", index=False)
+        return
+
+    def rk45_integration(self, T_final, N=10000):
+        """Apply RK45 integrator of scipy library to conduct numerical integration"""
+        # detemine initial and final value of integration
+        tau_init = 0
+        tau_final = 1. / (T_final * self.kb)
+        # initial step step size
+        step_size = tau_final / N
+        # initialize quantities to be stored
+        self.E = []
+        self.Z = []
+        self.n_p = []
+        self.mu = []
+        self.n_el = []
+        # prepare the initial y_tensor
+        # map initial constant amplitude (at zero beta)
+        f = self.f
+        t_0 = self.M * np.log(1 + f / (1 - f))
+        ## 1-RDM
+        RDM_1 = np.eye(self.M) * self.f
+        ## Mapping T_1
+        t_1 = np.zeros([self.M, self.M])
+        t_1 += RDM_1.transpose()
+        t_1 -= np.einsum('p,q,pq->qp', self.sin_theta, self.sin_theta, np.eye(self.M))
+        t_1 /= np.einsum('q,p->qp', self.cos_theta, self.sin_theta)
+        ## mapping T_2
+        t_2 = np.zeros([self.M, self.M, self.M, self.M])
+
+        initial_y_tensor = self.ravel_T_tensor({"t_0": t_0, "t_1": t_1, "t_2": t_2})
+
+        relative_tolerance = 1e-3
+        absolute_tolerance = 1e-6
+
+        integration_function = self._rk45_solve_ivp_integration_function
+
+
+        sol = solve_ivp(
+            fun=integration_function,  # the function we are integrating
+            method="RK45",  # the integration method we are using
+            first_step=step_size,  # fix the initial step size
+            t_span=(
+                tau_init,  # initial time
+                tau_final,  # boundary time, integration end point
+            ),
+            y0=initial_y_tensor,  # initial state - shape (n, )
+            args=(tau_final, ),  # extra args to pass to `_new_5_rk45_solve_ivp_integration_function`
+            # max_step=self.step_size,  # maximum allowed step size
+            rtol=relative_tolerance,  # relative tolerance
+            atol=absolute_tolerance,  # absolute tolerance
+            dense_output=False,  # extra debug information
+            # we do not need to vectorize
+            # this means to process multiple time steps inside the function `_new_5_rk45_solve_ivp_integration_function`
+            # it would be useful for a method which does some kind of block stepping
+            vectorized=False,
+        )
+
+        self._postprocess_rk45_integration_results(sol)
+
         return
 
     def Plot_thermal(self, compare=False):
