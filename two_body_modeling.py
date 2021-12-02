@@ -11,24 +11,23 @@ class two_body_model():
     """ Define a object that implement thermal field coupled_cluster
         method and thermal NOE method
         for GS and thermal property calculations for two-electron Hamiltonian """
-    def __init__(self, E_0, H, V_eri, n_occ):
+    def __init__(self, E_HF, Fock, V_eri, n_occ):
         """
-        E_0: energy expectation value
-        H: core 1-electron integral
+        E_HF: energy expectation value (Hartree Fock GS energy)
+        Fock: fock matrix
         V_eri: 2-electron integral (chemist's notation)
         M: dimension of MO basis
         (all electron integrals are represented in MO basis)
         """
         print("***<start of input parameters>***")
-        self.E_0 = E_0
+        self.E_HF = E_HF
         self.V = V_eri
         self.n_occ = n_occ
 
         # construct Fock matrix (from 1e and 2e integral)
-        self.F = H.copy()
-        self.F += 2 * np.einsum('iipq->pq', self.V)
-        self.F -= 2 * np.einsum('iqpi->pq', self.V)
+        self.F = Fock
 
+        # number of MOs
         self.M = self.F.shape[0]
 
         # f and f_bar defines contraction in thermal NOE
@@ -40,7 +39,7 @@ class two_body_model():
         self.one_fourth = 1. / 4.
         # initialize Hamiltonian
         # constant part of the full Hamiltonian (H_0)
-        print("constant part of Hamiltonian (H_0):\n{:}".format(self.E_0))
+        print("HF ground state energy:{:.5f}".format(self.E_HF))
         # one-electron Hamiltonian   (H_1)
         print('One-electron part of the Hamiltonian (H_1):\n{:}'.format(self.F.shape))
         # two-electron Hamiltnoain (H_2)
@@ -83,7 +82,6 @@ class two_body_model():
 
         # Diagonalize Fock matrix
         E_mf, V_mf = np.linalg.eigh(self.F)
-        print("Eigenvalue of Fock matrix:\n{:}".format(E_mf))
         # calculate Femi-Dirac occupation number with chemical potential that fixex total number of electron
         n_p, mu = self.Cal_mu_FD(E_mf, beta)
 
@@ -150,11 +148,6 @@ class two_body_model():
         print("V_tilde_aijk:\n{:}".format(self.V_tilde['aijk'].shape))
         print("V_tilde_iajb:\n{:}".format(self.V_tilde['iajb'].shape))
 
-        # determine the constant shift
-        self.E_0 = 2 * np.trace(self.F_tilde['ij'])
-        self.E_0 += 2 * np.einsum('iijj->', self.V_tilde['ijkl'])
-        self.E_0 -= 2 * np.einsum('ijji->', self.V_tilde['ijkl'])
-
         return
 
     def thermal_field_coupled_cluster(self, T_final, N, chemical_potential=True):
@@ -171,13 +164,6 @@ class two_body_model():
             lmd = (self.n_occ - sum(occ)) / sum(c_p)
             occ += lmd * c_p
             print("occ:{:}".format(occ))
-            # inverse mapping occupation number to density matrix
-            # RDM_1 = np.dot(np.dot(nat, occ), nat.transpose())
-            # map T amplitude from density matrix
-            # t_1 = np.zeros([self.M, self.M])
-            # t_1 += RDM_1.transpose()
-            # t_1 -= np.einsum('p,q,pq->qp', self.sin_theta, self.sin_theta, np.eye(self.M))
-            # t_1 /= np.einsum('q,p->qp', self.cos_theta, self.sin_theta)
 
             return occ
 
@@ -186,6 +172,8 @@ class two_body_model():
         # compute reduced density matrix at zero beta
         ## 1-RDM
         RDM_1 = np.eye(self.M) * self.f
+
+
 
         ## 2-RDM (in chemist's notation)
         RDM_2 = np.zeros([self.M, self.M, self.M, self.M])
@@ -239,7 +227,7 @@ class two_body_model():
             E = energy(T['t_1'], T['t_2'], self.F_tilde, self.V_tilde)
 
             # apply constant shift to energy equation
-            E += self.E_0
+            E += self.E_HF
 
             if chemical_potential:
                 # compute chemical potential
@@ -276,14 +264,13 @@ class two_body_model():
             # compute occupation number
             occ, nat = np.linalg.eigh(RDM_1)
 
-            # number of electron
-            n_el = np.trace(RDM_1)
-
             if min(occ) < 0 or max(occ) > 1:
-                # add correction to t_1 if occupation number become abnormal
-                T['t_1'] = correct_occupation_number(occ, nat)
+                # add correction when occupation number become abnormal
+                occ = correct_occupation_number(occ, nat)
                 # break
 
+            # number of electron
+            n_el = sum(occ)
 
             # print and store properties along the propagation
             if i != 0:
@@ -298,7 +285,7 @@ class two_body_model():
                 # store thermal internal energy
                 self.E_th.append(E)
                 # store chemical potential
-                # self.mu_th.append(mu)
+                self.mu_th.append(mu)
                 # store total number of electrons
                 self.n_el_th.append(n_el)
                 # store partition function
@@ -311,8 +298,7 @@ class two_body_model():
             beta_tmp += dtau
 
         # store thermal property data
-        thermal_prop = {"T": self.T_grid, "Z": self.Z_th,
-                         #"mu": self.mu_th,
+        thermal_prop = {"T": self.T_grid, "Z": self.Z_th, "mu": self.mu_th,
                         "U": self.E_th, "n_el": self.n_el_th}
 
         df = pd.DataFrame(thermal_prop)
