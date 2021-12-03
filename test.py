@@ -3,10 +3,19 @@ from pyscf import gto, scf, ao2mo
 import numpy as np
 from two_body_modeling import two_body_model
 
+#geometry of molecules (in Angstrom)
+HF = 'H 0 0 0; F 0 0 1.1'
 
+H2O = '''
+O 0 0      0
+H 0 -2.757 2.587
+H 0  2.757 2.587'''
+
+atom = HF
+molecule = "HF"
 # setup model input
 mol_hf = gto.M(
-    atom = 'H 0 0 0; F 0 0 1.1',  # in Angstrom
+    atom = atom,  # in Angstrom
     basis = 'ccpvdz',
     symmetry = 1,
 )
@@ -45,11 +54,8 @@ n_el = sum(mf.mo_occ) / 2
 print("total number of electrons: {:}".format(n_el))
 print("occupation number:\n{:}".format(mf.mo_occ))
 
-E, V = np.linalg.eigh(fock_mo)
-RDM_1 = np.dot(V, np.dot(np.diag(mf.mo_occ), V.transpose()))
-
 # run TFCC & thermal NOE calculation
-model = two_body_model(E_HF, fock_mo, eri_mo, n_el)
+model = two_body_model(E_HF, hcore_mo, fock_mo, eri_mo, n_el, molecule=molecule)
 # thermal field transform
 model.thermal_field_transform(T=3e5)
 # TFCC imaginary time integration

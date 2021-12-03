@@ -12,18 +12,23 @@ class two_body_model():
     """ Define a object that implement thermal field coupled_cluster
         method and thermal NOE method
         for GS and thermal property calculations for two-electron Hamiltonian """
-    def __init__(self, E_HF, Fock, V_eri, n_occ):
+    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, molecule):
         """
         E_HF: energy expectation value (Hartree Fock GS energy)
+        H_core: core electron Hamiltonian
         Fock: fock matrix
         V_eri: 2-electron integral (chemist's notation)
         M: dimension of MO basis
+        molecule: name of the molecule for testing
         (all electron integrals are represented in MO basis)
         """
         print("***<start of input parameters>***")
         self.E_HF = E_HF
         self.V = V_eri
         self.n_occ = n_occ
+        self.molecule = molecule
+        # core electron Hamiltonian
+        self.H_core = H_core
 
         # construct Fock matrix (from 1e and 2e integral)
         self.F = Fock
@@ -83,8 +88,12 @@ class two_body_model():
 
         # Diagonalize Fock matrix
         E_mf, V_mf = np.linalg.eigh(self.F)
+
         # calculate Femi-Dirac occupation number with chemical potential that fixex total number of electron
         n_p, mu = self.Cal_mu_FD(E_mf, beta)
+
+        # 1-RDM at reference temperature
+        RDM_1 = np.dot(V_mf, np.dot(np.diag(n_p), V_mf.transpose()))
 
         print("Fermi-Dirac Occupation number:\n{:}".format(n_p))
         print("initial chemical potential:{:.3f}".format(mu))
@@ -96,8 +105,7 @@ class two_body_model():
         # store sin_theta and cos_theta as object as instance
         self.sin_theta = sin_theta
         self.cos_theta = cos_theta
-
-        # 1-electron Hamiltonian
+        # 1-electron Hamiltonian (Fock Marix)
         self.F_tilde = {"ij": np.einsum('i,j,ij->ij', sin_theta, sin_theta, self.F),
                         "ai": np.einsum('a,i,ai->ai', cos_theta, sin_theta, self.F),
                         "ia": np.einsum('i,a,ia->ia', sin_theta, cos_theta, self.F),
@@ -149,6 +157,11 @@ class two_body_model():
         print("V_tilde_aijk:\n{:}".format(self.V_tilde['aijk'].shape))
         print("V_tilde_iajb:\n{:}".format(self.V_tilde['iajb'].shape))
 
+        # determine the constant shift
+        self.E_0 = np.trace(np.einsum('ij,jk->jk', 0.5 * (self.H_core + self.F), RDM_1)) * 2
+
+        print("constant term:{:}".format(self.E_0))
+
         return
 
     def ravel_T_tensor(self, T):
@@ -198,7 +211,7 @@ class two_body_model():
             print("Z:{:.5f}".format(Z))
             print("E:{:.5f} hartree".format(E))
             print("mu:{:.5f} hartree".format(mu))
-            print("Z:{:.5f}".format(n_el))
+            print("number of electron:{:.5f}".format(n_el))
             print("occupation number:\n{:}".format(occ))
 
         return
@@ -243,7 +256,8 @@ class two_body_model():
         # energy equation
         R_0 = energy(T['t_1'], T['t_2'], self.F_tilde, self.V_tilde)
         # apply constant shift to energy equation
-        R_0 += self.E_HF
+        R_0 += self.E_0
+
         self.E.append((tau, R_0))
 
         # total number of electrons
@@ -306,13 +320,12 @@ class two_body_model():
         for idx, t in enumerate(sol.t):
             self.n_p_cc[idx, :] = N_dic[t]
 
-
         # store thermal property data in csv file
         thermal_prop = {"T": self.T_cc, "Z": self.Z_cc[1:], "mu": self.mu_cc[1:],
                         "U": self.E_cc[1:], "n_el": self.n_el_cc[1:]}
 
         df = pd.DataFrame(thermal_prop)
-        df.to_csv("thermal_properties_TFCC.csv", index=False)
+        df.to_csv("thermal_properties_TFCC_for_{:}.csv".format(self.molecule), index=False)
 
         # store occupation number data (from CC)
         occ_dic = {"T": self.T_cc}
@@ -323,7 +336,7 @@ class two_body_model():
                     occ_data.append(self.n_p_cc[j][i])
             occ_dic[i] = occ_data
         df = pd.DataFrame(occ_dic)
-        df.to_csv("occupation_number_TFCC.csv", index=False)
+        df.to_csv("occupation_number_TFCC_for_{:}.csv".format(self.molecule), index=False)
         return
 
     def rk45_integration(self, T_final, N=10000):
@@ -359,7 +372,6 @@ class two_body_model():
         absolute_tolerance = 1e-6
 
         integration_function = self._rk45_solve_ivp_integration_function
-
 
         sol = solve_ivp(
             fun=integration_function,  # the function we are integrating
