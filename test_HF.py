@@ -1,7 +1,7 @@
 # import pyscf
 from pyscf import gto, scf, ao2mo
 import numpy as np
-from two_body_modeling import two_body_model
+from Hartree_Fock import check_integral
 
 #geometry of molecules (in Angstrom)
 HF = 'H 0 0 0; F 0 0 1.1'
@@ -26,10 +26,14 @@ mf.kernel()
 
 # extract Hamiltonian parameters
 # 1-electron integral
-hcore_ao = mol_hf.intor_symmetric('int1e_kin') + mol_hf.intor_symmetric('int1e_nuc')
+hcore_ao = mol_hf.intor('int1e_kin_sph') + mol_hf.intor('int1e_nuc_sph')
 hcore_mo = np.einsum('pi,pq,qj->ij', mf.mo_coeff, hcore_ao, mf.mo_coeff)
 print("1-electron integral (in AO basis):\n{:}".format(hcore_ao.shape))
 print("1-electron integral (in MO basis):\n{:}".format(hcore_mo.shape))
+
+# overlap matrix
+S_ao = mol_hf.intor('int1e_ovlp_sph')
+S_mo = np.einsum('pi,pq,qj->ij', mf.mo_coeff, S_ao, mf.mo_coeff)
 
 # 2-electron integral
 eri_ao = mol_hf.intor('int2e_sph', aosym=1)
@@ -48,17 +52,16 @@ E_HF = mf.e_tot
 
 print("energy expectation value (HF energy) (in Hartree):{:.5f}".format(E_HF))
 
-
 # total number of electrons
-n_el = sum(mf.mo_occ) / 2
+occupation_number = mf.mo_occ / 2
+n_el = sum(occupation_number)
 print("total number of electrons: {:}".format(n_el))
-print("occupation number:\n{:}".format(mf.mo_occ))
+print("occupation number:\n{:}".format(occupation_number))
+
+# get NuclearRepulsionEnergy
+NRE = mf.energy_nuc()
 
 # run TFCC & thermal NOE calculation
-model = two_body_model(E_HF, hcore_mo, fock_mo, eri_mo, n_el, molecule=molecule)
+model = check_integral(E_HF, hcore_ao, fock_ao, eri_ao, n_el, S_ao, occupation_number, NRE, molecule=molecule)
 # thermal field transform
-model.thermal_field_transform(T=3e5)
-# TFCC imaginary time integration
-model.rk45_integration(T_final=5e4)
-# plot thermal properties
-model.Plot_thermal()
+model.my_SCF()
