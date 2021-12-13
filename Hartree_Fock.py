@@ -7,13 +7,14 @@ class check_integral():
     """ check integral class test the input on one-electron and two-electron of PySCF input by comparing
     the converged Fock matrix, density matrix and GS energy between a SCF procedure
     writting by myself the the HF result of PySCF"""
-    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, S, occupation_number, NRE, molecule):
+    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, S, occupation_number, NRE, molecule, MO=False):
         """
         E_HF: energy expectation value (Hartree Fock GS energy)
         H_core: core electron Hamiltonian
         Fock: fock matrix
         V_eri: 2-electron integral (chemist's notation)
         M: dimension of MO basis
+        MO: boolean to determine if the integral is implemented in MO basis or not
         molecule: name of the molecule for testing
         (all electron integrals are represented in AO basis)
         """
@@ -40,6 +41,9 @@ class check_integral():
 
         # NuclearRepulsionEnergy
         self.NRE = NRE
+
+        # MO / AO integral?
+        self.MO = MO
         print("***<end of input parameters>***")
 
     def my_SCF(self):
@@ -65,7 +69,10 @@ class check_integral():
 
         def Cal_Density_Matrix(Fock_Matrix, Overlap_Matrix):
             """Calculate density matrix from Fock matrix and overlap matrix"""
-            e, val = sp.linalg.eigh(Fock_Matrix, Overlap_Matrix)
+            if self.MO:
+                e, val = np.linalg.eigh(Fock_Matrix)
+            else:
+                e, val = sp.linalg.eigh(Fock_Matrix, Overlap_Matrix)
             Density_Matrix = np.einsum('ui,i,vi->uv', val, self.occ, val)
             return Density_Matrix
 

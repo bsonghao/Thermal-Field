@@ -3,6 +3,9 @@ from pyscf import gto, scf, ao2mo
 import numpy as np
 from Hartree_Fock import check_integral
 
+# MO
+MO = True
+
 #geometry of molecules (in Angstrom)
 HF = 'H 0 0 0; F 0 0 1.1'
 
@@ -61,7 +64,18 @@ print("occupation number:\n{:}".format(occupation_number))
 # get NuclearRepulsionEnergy
 NRE = mf.energy_nuc()
 
+if MO:
+    hcore = hcore_mo
+    fock = fock_mo
+    eri = eri_mo
+    S = S_mo
+else:
+    hcore = hcore_ao
+    fock = fock_ao
+    eri = eri_ao
+    S = S_ao
+
 # run TFCC & thermal NOE calculation
-model = check_integral(E_HF, hcore_ao, fock_ao, eri_ao, n_el, S_ao, occupation_number, NRE, molecule=molecule)
+model = check_integral(E_HF, hcore, fock, eri, n_el, S, occupation_number, NRE, molecule=molecule, MO=MO)
 # thermal field transform
 model.my_SCF()
