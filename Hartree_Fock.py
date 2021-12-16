@@ -1,4 +1,5 @@
 # system imports
+import itertools as it
 
 # third party imports
 import numpy as np
@@ -13,16 +14,24 @@ class check_integral():
     the converged Fock matrix, density matrix and GS energy between a SCF procedure
     writing by myself the the HF result of PySCF"""
 
-    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, S, occupation_number, NRE, molecule, MO=False):
+    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, S, occupation_number, NRE, molecule, mo_basis=False):
         """
-        E_HF: energy expectation value (Hartree Fock GS energy)
-        H_core: core electron Hamiltonian
-        Fock: Fock matrix
-        V_eri: 2-electron integral (chemist's notation)
-        M: dimension of MO basis
-        MO: Boolean to determine if the integral is implemented in MO basis or not
-        molecule: name of the molecule for testing
-        (all electron integrals are represented in AO basis)
+        Provided Arguments:
+            E_HF: energy expectation value (Hartree Fock GS energy)
+            H_core: core electron Hamiltonian
+            Fock: Fock matrix
+            V_eri: 2-electron integral (chemist's notation)
+            n_occ: ?
+            S: ?
+            occupation_number: ?
+            NRE: ?
+            molecule: name of the molecule for testing
+            mo_basis: Boolean to determine if the integral is implemented in MO basis or not
+            (all electron integrals are represented in AO basis)
+
+        Important members of the class:
+            M: dimension of MO basis (defined by F.shape[0])
+
         """
 
         print("***<start of input parameters>***")
@@ -45,59 +54,60 @@ class check_integral():
 
         self.occ = occupation_number
 
-        # number of MOs
+        # dimension/number of MO's in our basis
         self.M = self.F.shape[0]
 
         # NuclearRepulsionEnergy
         self.NRE = NRE
 
         # MO / AO integral?
-        self.MO = MO
+        self.mo_basis = mo_basis
         print("***<end of input parameters>***")
 
     def my_SCF(self, max_iteration=100):
         """write my own SCF procedure"""
 
-        def Cal_Fock(D):
+        def Cal_Fock(M, H_core, potential, density_mat):
             """Calculate Fock matrix from 1-RDM"""
 
-            def Cal_sym_2e_int(V, DM):
+            def Cal_sym_2e_int(M, potential, density_mat):
                 """Calculate symmetrized 2 electron integral"""
 
-                E_mf = np.zeros([self.M, self.M])
+                # initialize the mean field energy
+                E_mf = np.zeros([M, M])
 
-                for a in range(self.M):
-                    for b in range(self.M):
-                        for c in range(self.M):
-                            for d in range(self.M):
-                                E_mf[a, b] += (2 * self.V[a, b, c, d] - self.V[a, c, b, d]) * DM[c, d]
+                # calculate the integral
+                for a, b, c, d in it.product(range(M), repeat=4):
+                    E_mf[a, b] += density_mat[c, d] * (
+                        2 * potential[a, b, c, d] - potential[a, c, b, d]
+                    )
 
                 return E_mf
 
             # initialize
-            Fock_Matrix = np.zeros([self.M, self.M])
+            Fock_Matrix = np.zeros([M, M])
 
             # add the core contributions
-            Fock_Matrix += self.H_core
+            Fock_Matrix += H_core
 
             # we choose the effective potential to be
             # the symmetrized two electron integral
-            sym_V = Cal_sym_2e_int(self.V, D)
+            sym_V = Cal_sym_2e_int(M, potential, density_mat)
 
             # add the potential contributions
             Fock_Matrix += sym_V
 
             return Fock_Matrix
 
-        def Cal_Density_Matrix(Fock_Matrix, Overlap_Matrix):
+        def Cal_Density_Matrix(Fock_Matrix, Overlap_Matrix, occ, mo_basis):
             """Calculate density matrix from Fock matrix and overlap matrix"""
 
-            if self.MO:
+            if mo_basis:
                 e, val = np.linalg.eigh(Fock_Matrix)
             else:
                 e, val = sp.linalg.eigh(Fock_Matrix, Overlap_Matrix)
 
-            Density_Matrix = np.einsum('ui,i,vi->uv', val, self.occ, val)
+            Density_Matrix = np.einsum('ui,i,vi->uv', val, occ, val)
 
             return Density_Matrix
 
@@ -113,13 +123,13 @@ class check_integral():
         for i in range(max_iteration):
 
             # calculate density matrix before the update of Fock matrix
-            RDM_1_in = Cal_Density_Matrix(Fock, self.S)
+            RDM_1_in = Cal_Density_Matrix(Fock, self.S, self.occ, self.mo_basis)
 
             # calculate Fock matrix from density matrix
-            Fock = Cal_Fock(RDM_1_in)
+            Fock = Cal_Fock(self.M, self.H_core, self.V, RDM_1_in)
 
             # calculate density matrix after the update of Fock matrix
-            RDM_1_out = Cal_Density_Matrix(Fock, self.S)
+            RDM_1_out = Cal_Density_Matrix(Fock, self.S, self.occ, self.mo_basis)
 
             # evaluate HF energy after update of Fock matrix and Density matrix
             E_new = Cal_HF_energy(Fock, RDM_1_out)

@@ -158,7 +158,7 @@ def main():
         OccupationNumber,
         NR_energy,
         molecule=molecule,
-        MO=mo_flag
+        mo_basis=mo_flag
     )
 
     # thermal field transform
