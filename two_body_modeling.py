@@ -12,7 +12,7 @@ class two_body_model():
     """ Define a object that implement thermal field coupled_cluster
         method and thermal NOE method
         for GS and thermal property calculations for two-electron Hamiltonian """
-    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, molecule):
+    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, occupation_number, molecule):
         """
         E_HF: energy expectation value (Hartree Fock GS energy)
         H_core: core electron Hamiltonian

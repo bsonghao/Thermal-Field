@@ -1,7 +1,7 @@
 # import pyscf
 from pyscf import gto, scf, ao2mo
 import numpy as np
-from two_body_modeling import two_body_model
+from check_thermal_field import two_body_model
 
 def extract_Hamiltonian_parameters(mo_flag, mean_field, mol_HF):
     """
@@ -92,13 +92,11 @@ def main():
     NR_energy = mean_field.energy_nuc()
 
     # run TFCC & thermal NOE calculation
-    model = two_body_model(E_Hartree_Fock, h_core, fock_matrix, eri_integral, nof_electron, molecule=molecule)
+    model = two_body_model(E_Hartree_Fock, h_core, fock_matrix, eri_integral, nof_electron, OccupationNumber, molecule=molecule)
     # thermal field transform
     model.thermal_field_transform(T=3e5)
-    # TFCC imaginary time integration
-    model.rk45_integration(T_final=5e4)
-    # plot thermal properties
-    model.Plot_thermal()
+    # check CC CC_residue
+    model.check_CC_residue()
 
     return
 
