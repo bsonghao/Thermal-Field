@@ -80,14 +80,21 @@ class two_body_model():
         t_1 = self._mapping_HF_density_matrix_to_t_1_amplitude()
         t_2 = np.zeros([self.M, self.M, self.M, self.M])
         T_dic = {"t_1": t_1, "t_2": t_2}
+        # substitute HF mapped T amplitude into the CC residue equation
+        R_1, R_2 = update_amps(T_dic['t_1'], T_dic['t_2'], self.F_tilde, self.V_tilde, ERI_flag=True)
 
-        # substitude the T amplitude into the CC residue equation
-        R_1, R_2 = update_amps(T_dic['t_1'], T_dic['t_2'], self.F_tilde, self.V_tilde)
+        CC_energy = energy(T_dic['t_1'], T_dic['t_2'], self.F_tilde, self.V_tilde, ERI_flag=True)
+
+        print("HF energy:{:.5f}".format(self.E_HF))
+        # print("E_HF-E_0:{:.5f}".format(self.E_HF - self.E_0))
+        # check if correlation energy is zero
+        print("correlation energy:{:.5f}".format(CC_energy))
+        # assert np.isclose(CC_energy, 0.)
 
         # check if the CC reside get from HF mapped T amplitude to be zeros
-        # print("R_1:{:}".format(R_1) )
-        # assert np.allclose(R_1, np.zeros_like(R_1))
-        print("R_2:{:}".format(R_2))
+        print("R_1:{:}".format(abs(R_1).max()))
+        print("R_2:{:}".format(abs(R_2).max()))
+        assert np.allclose(R_1, np.zeros_like(R_1), atol=1e-6)
         assert np.allclose(R_2, np.zeros_like(R_2))
         return
 

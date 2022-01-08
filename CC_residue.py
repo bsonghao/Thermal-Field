@@ -14,10 +14,10 @@ MEMORYMIN = getattr(__config__, 'cc_ccsd_memorymin', 2000)
 # functions that calculate intermediate quantities
 
 ### Eqs. (37)-(39) "kappa"
-def cc_Foo(t1, t2, F_tilde, V_tilde, flag=False):
+def cc_Foo(t1, t2, F_tilde, V_tilde, ERI_flag=False):
     foo = F_tilde['ij']
     Fki = foo.copy()
-    if not flag:
+    if ERI_flag:
         eris_ovov = V_tilde['iajb']
         Fki += 2 * lib.einsum('kcld,ilcd->ki', eris_ovov, t2)
         Fki -= lib.einsum('kdlc,ilcd->ki', eris_ovov, t2)
@@ -26,10 +26,10 @@ def cc_Foo(t1, t2, F_tilde, V_tilde, flag=False):
     return Fki
 
 
-def cc_Fvv(t1, t2, F_tilde, V_tilde, flag=False):
+def cc_Fvv(t1, t2, F_tilde, V_tilde, ERI_flag=False):
     fvv = F_tilde['ab']
     Fac = fvv.copy()
-    if not flag:
+    if ERI_flag:
         eris_ovov = V_tilde['iajb']
         Fac -= 2 * lib.einsum('kcld,klad->ac', eris_ovov, t2)
         Fac += lib.einsum('kdlc,klad->ac', eris_ovov, t2)
@@ -38,10 +38,10 @@ def cc_Fvv(t1, t2, F_tilde, V_tilde, flag=False):
     return Fac
 
 
-def cc_Fov(t1, t2, F_tilde, V_tilde, flag=False):
+def cc_Fov(t1, t2, F_tilde, V_tilde, ERI_flag=False):
     fov = F_tilde['ia']
     Fkc = fov.copy()
-    if not flag:
+    if ERI_flag:
         eris_ovov = V_tilde['iajb']
         Fkc += 2 * np.einsum('kcld,ld->kc', eris_ovov, t1)
         Fkc -= np.einsum('kdlc,ld->kc', eris_ovov, t1)
@@ -50,20 +50,20 @@ def cc_Fov(t1, t2, F_tilde, V_tilde, flag=False):
 ### Eqs. (40)-(41) "lambda"
 
 
-def cc_Loo(t1, t2, F_tilde, V_tilde, flag=False):
+def cc_Loo(t1, t2, F_tilde, V_tilde, ERI_flag=False):
     fov = F_tilde['ia']
-    Lki = cc_Foo(t1, t2, F_tilde, V_tilde, flag=flag) + np.einsum('kc,ic->ki',fov, t1)
-    if not flag:
+    Lki = cc_Foo(t1, t2, F_tilde, V_tilde, ERI_flag=ERI_flag) + np.einsum('kc,ic->ki', fov, t1)
+    if ERI_flag:
         eris_ovoo = V_tilde['iajk']
         Lki += 2*np.einsum('lcki,lc->ki', eris_ovoo, t1)
         Lki -=   np.einsum('kcli,lc->ki', eris_ovoo, t1)
     return Lki
 
 
-def cc_Lvv(t1, t2, F_tilde, V_tilde, flag=False):
+def cc_Lvv(t1, t2, F_tilde, V_tilde, ERI_flag=False):
     fov = F_tilde['ia']
-    Lac = cc_Fvv(t1, t2, F_tilde, V_tilde, flag=flag) - np.einsum('kc,ka->ac',fov, t1)
-    if not flag:
+    Lac = cc_Fvv(t1, t2, F_tilde, V_tilde, ERI_flag=ERI_flag) - np.einsum('kc,ka->ac',fov, t1)
+    if ERI_flag:
         eris_ovvv = V_tilde['iabc']
         Lac += 2*np.einsum('kdac,kd->ac', eris_ovvv, t1)
         Lac -=   np.einsum('kcad,kd->ac', eris_ovvv, t1)
@@ -124,7 +124,7 @@ def cc_Wvoov(t1, t2, F_tilde, V_tilde):
     Wakic += lib.einsum('ldkc,ilad->akic', eris_ovov, t2)
     return Wakic
 
-def update_amps(t1, t2, F_tilde, V_tilde, cc2=False, flag=False):
+def update_amps(t1, t2, F_tilde, V_tilde, cc2=False, ERI_flag=False):
     """Singles and Doubles residue equation"""
     # Ref: Hirata et al., J. Chem. Phys. 120, 2581 (2004) Eqs.(35)-(36)
     # assert(isinstance(eris, ccsd._ChemistsERIs))
@@ -136,9 +136,9 @@ def update_amps(t1, t2, F_tilde, V_tilde, cc2=False, flag=False):
     # mo_e_o = mo_energy[:nocc]
     # mo_e_v = mo_energy[nocc:] + cc.level_shift
 
-    Foo = cc_Foo(t1, t2, F_tilde, V_tilde, flag=flag)
-    Fvv = cc_Fvv(t1, t2, F_tilde, V_tilde, flag=flag)
-    Fov = cc_Fov(t1, t2, F_tilde, V_tilde, flag=flag)
+    Foo = cc_Foo(t1, t2, F_tilde, V_tilde, ERI_flag=ERI_flag)
+    Fvv = cc_Fvv(t1, t2, F_tilde, V_tilde, ERI_flag=ERI_flag)
+    Fov = cc_Fov(t1, t2, F_tilde, V_tilde, ERI_flag=ERI_flag)
 
     M = t1.shape[0]
     # T1 equation
@@ -150,7 +150,7 @@ def update_amps(t1, t2, F_tilde, V_tilde, cc2=False, flag=False):
     t1new +=  -np.einsum('kc,ikca->ia', Fov, t2)
     t1new +=   np.einsum('kc,ic,ka->ia', Fov, t1, t1)
     t1new += fov.conj()
-    if not flag:
+    if ERI_flag:
         t1new += 2*np.einsum('kcai,kc->ia', V_tilde['iabj'], t1)
         t1new +=  -np.einsum('kiac,kc->ia', V_tilde['ijab'], t1)
         t1new += 2*lib.einsum('kdac,ikcd->ia', V_tilde['iabc'], t2)
@@ -168,10 +168,7 @@ def update_amps(t1, t2, F_tilde, V_tilde, cc2=False, flag=False):
     # print("shape of V:{:}".format(V_tilde['aibj'].shape))
     # print("shape of t2new:{:}".format(t2new.shape))
 
-
-
-    if not flag:
-
+    if ERI_flag:
         tmp2 = lib.einsum('kibc,ka->abic', V_tilde['ijab'], -t1)
         tmp2 += V_tilde['iabc'].conj().transpose(1,3,0,2)
         tmp = lib.einsum('abic,jc->ijab', tmp2, t1)
@@ -182,7 +179,7 @@ def update_amps(t1, t2, F_tilde, V_tilde, cc2=False, flag=False):
         t2new -= tmp + tmp.transpose(1,0,3,2)
         t2new += V_tilde['iajb'].conj().transpose(0,2,1,3)
     if cc2:
-        if not flag:
+        if ERI_flag:
             Woooo2 = V_tilde['ijkl'].transpose(0,2,1,3).copy()
             Woooo2 += lib.einsum('lcki,jc->klij', V_tilde['iajk'], t1)
             Woooo2 += lib.einsum('kclj,ic->klij', V_tilde['iajk'], t1)
@@ -201,11 +198,11 @@ def update_amps(t1, t2, F_tilde, V_tilde, cc2=False, flag=False):
         tmp = lib.einsum('ki,kjab->ijab', Loo2, t2)
         t2new -= (tmp + tmp.transpose(1,0,3,2))
     else:
-        Loo = cc_Loo(t1, t2, F_tilde, V_tilde, flag=flag)
-        Lvv = cc_Lvv(t1, t2, F_tilde, V_tilde, flag=flag)
+        Loo = cc_Loo(t1, t2, F_tilde, V_tilde, ERI_flag=ERI_flag)
+        Lvv = cc_Lvv(t1, t2, F_tilde, V_tilde, ERI_flag=ERI_flag)
         # Loo[np.diag_indices(nocc)] -= mo_e_o
         # Lvv[np.diag_indices(nvir)] -= mo_e_v
-        if not flag:
+        if ERI_flag:
             Woooo = cc_Woooo(t1, t2, F_tilde, V_tilde)
             Wvoov = cc_Wvoov(t1, t2, F_tilde, V_tilde)
             Wvovo = cc_Wvovo(t1, t2, F_tilde, V_tilde)
@@ -218,7 +215,7 @@ def update_amps(t1, t2, F_tilde, V_tilde, cc2=False, flag=False):
         t2new += (tmp + tmp.transpose(1,0,3,2))
         tmp = lib.einsum('ki,kjab->ijab', Loo, t2)
         t2new -= (tmp + tmp.transpose(1,0,3,2))
-        if not flag:
+        if ERI_flag:
             tmp  = 2*lib.einsum('akic,kjcb->ijab', Wvoov, t2)
             tmp -=   lib.einsum('akci,kjcb->ijab', Wvovo, t2)
             t2new += (tmp + tmp.transpose(1,0,3,2))
@@ -230,18 +227,18 @@ def update_amps(t1, t2, F_tilde, V_tilde, cc2=False, flag=False):
     return t1new, t2new
 
 
-def energy(t1, t2, F_tilde, V_tilde):
+def energy(t1, t2, F_tilde, V_tilde, ERI_flag=False):
     '''RCCSD correlation energy'''
     # if t1 is None: t1 = cc.t1
     # if t2 is None: t2 = cc.t2
     # if eris is None: eris = cc.ao2mo()
-
-    e = 2*np.einsum('ia,ia', F_tilde['ia'], t1)
-    tau = np.einsum('ia,jb->ijab',t1,t1)
-    tau += t2
-    eris_ovov = V_tilde['iajb']
-    e += 2*np.einsum('ijab,iajb', tau, eris_ovov)
-    e +=  -np.einsum('ijab,ibja', tau, eris_ovov)
+    e = 2*np.einsum('ia,ia->', F_tilde['ia'], t1)
+    if ERI_flag:
+        tau = np.einsum('ia,jb->ijab',t1,t1)
+        tau += t2
+        eris_ovov = V_tilde['iajb'].copy()
+        e += 2*np.einsum('ijab,iajb', tau, eris_ovov)
+        e +=  -np.einsum('ijab,ibja', tau, eris_ovov)
     if abs(e.imag) > 1e-4:
         logger.warn(cc, 'Non-zero imaginary part found in RCCSD energy %s', e)
     return e.real
