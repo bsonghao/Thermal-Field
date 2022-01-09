@@ -6,6 +6,7 @@ from math import factorial, isclose
 from scipy.linalg import eigh
 from CC_residue import *
 from scipy.integrate import solve_ivp
+import itertools as it
 
 
 class two_body_model():
@@ -85,11 +86,12 @@ class two_body_model():
 
         CC_energy = energy(T_dic['t_1'], T_dic['t_2'], self.F_tilde, self.V_tilde, ERI_flag=True)
 
+        # check if correlation energy + constant energy returns HF energy
         print("HF energy:{:.5f}".format(self.E_HF))
-        # print("E_HF-E_0:{:.5f}".format(self.E_HF - self.E_0))
-        # check if correlation energy is zero
+        print("E_0 + E_corr:{:.5f}".format(CC_energy + self.E_0))
         print("correlation energy:{:.5f}".format(CC_energy))
-        # assert np.isclose(CC_energy, 0.)
+
+        assert np.isclose(CC_energy + self.E_0, self.E_HF)
 
         # check if the CC reside get from HF mapped T amplitude to be zeros
         print("R_1:{:}".format(abs(R_1).max()))
@@ -119,6 +121,29 @@ class two_body_model():
                 mu = - np.log(1./self.f - 1)
         return n_p, mu
 
+    def _construct_fock_marix_from_BV_transformed_Hamiltonian(self):
+        """construct fock matrix from 1-electron, 2-electron integral in quasi-particle representation"""
+        return
+
+    def _construct_fock_matrix_from_physical_Hamiltonian(self, RDM_1):
+        """construct fock matrix from 1-electron, 2-electron integral in physical space and then BV
+        transform to quasi-particle space
+        """
+        M = self.M
+        # initialize
+        Fock_Matrix = np.zeros([M, M])
+        # add core electron part
+        Fock_Matrix += self.H_core
+        # add effective two electron part
+        for a, b, c, d in it.product(range(M), repeat=4):
+            Fock_Matrix[a, b] += RDM_1[c, d] * (2 * self.V[a, b, c, d] - self.V[a, c, b, d])
+        # Bogoliubov transform the Fock_matrix
+        Fock_Matrix_tilde = {"ij": np.einsum('i,j,ij->ij', self.sin_theta, self.sin_theta, Fock_Matrix),
+                             "ai": np.einsum('a,i,ai->ai', self.cos_theta, self.sin_theta, Fock_Matrix),
+                             "ia": np.einsum('i,a,ia->ia', self.sin_theta, self.cos_theta, Fock_Matrix),
+                             "ab": np.einsum('a,b,ab->ab', self.cos_theta, self.cos_theta, Fock_Matrix)}
+        return Fock_Matrix_tilde
+
     def thermal_field_transform(self, T):
         """conduct Bogoliubov transform on physical Hamiltonian"""
         # calculation recprical termperature
@@ -145,15 +170,15 @@ class two_body_model():
         self.sin_theta = sin_theta
         self.cos_theta = cos_theta
         # 1-electron Hamiltonian (Fock Marix)
-        self.F_tilde = {"ij": np.einsum('i,j,ij->ij', sin_theta, sin_theta, self.F),
-                        "ai": np.einsum('a,i,ai->ai', cos_theta, sin_theta, self.F),
-                        "ia": np.einsum('i,a,ia->ia', sin_theta, cos_theta, self.F),
-                        "ab": np.einsum('a,b,ab->ab', cos_theta, cos_theta, self.F)}
+        self.H_core_tilde = {"ij": np.einsum('i,j,ij->ij', sin_theta, sin_theta, self.H_core),
+                             "ai": np.einsum('a,i,ai->ai', cos_theta, sin_theta, self.H_core),
+                             "ia": np.einsum('i,a,ia->ia', sin_theta, cos_theta, self.H_core),
+                             "ab": np.einsum('a,b,ab->ab', cos_theta, cos_theta, self.H_core)}
         print("1-electron Hamiltonian in quasi-particle representation:")
-        print("F_tilde_ij:\n{:}".format(self.F_tilde['ij'].shape))
-        print("F_tilde_ai:\n{:}".format(self.F_tilde['ai'].shape))
-        print("F_tilde_ia:\n{:}".format(self.F_tilde['ia'].shape))
-        print("F_tilde_ab:\n{:}".format(self.F_tilde['ab'].shape))
+        print("H_core_tilde_ij:\n{:}".format(self.H_core_tilde['ij'].shape))
+        print("H_core_tilde_ai:\n{:}".format(self.H_core_tilde['ai'].shape))
+        print("H_core_tilde_ia:\n{:}".format(self.H_core_tilde['ia'].shape))
+        print("H_core_tilde_ab:\n{:}".format(self.H_core_tilde['ab'].shape))
 
         self.n_tilde = {"ij": np.einsum('i,j,ij->ij', self.sin_theta, self.sin_theta, np.eye(self.M)),
                         "ai": np.einsum('a,i,ai->ai', self.cos_theta, self.sin_theta, np.eye(self.M)),
@@ -195,6 +220,15 @@ class two_body_model():
         print("V_tilde_aibj:\n{:}".format(self.V_tilde['aibj'].shape))
         print("V_tilde_aijk:\n{:}".format(self.V_tilde['aijk'].shape))
         print("V_tilde_iajb:\n{:}".format(self.V_tilde['iajb'].shape))
+
+        # construct Fock matrix from 1-electron and 2-electron integrals
+        self.F_tilde = self._construct_fock_matrix_from_physical_Hamiltonian(RDM_1)
+
+        print("Fock_Matrix in quasi-particle representation:")
+        print("F_tilde_ij:\n{:}".format(self.F_tilde['ij'].shape))
+        print("F_tilde_ai:\n{:}".format(self.F_tilde['ai'].shape))
+        print("F_tilde_ia:\n{:}".format(self.F_tilde['ia'].shape))
+        print("F_tilde_ab:\n{:}".format(self.F_tilde['ab'].shape))
 
         # determine the constant shift
         self.E_0 = np.trace(np.einsum('ij,jk->jk', 0.5 * (self.H_core + self.F), RDM_1)) * 2
