@@ -82,20 +82,21 @@ class two_body_model():
         t_2 = np.zeros([self.M, self.M, self.M, self.M])
         T_dic = {"t_1": t_1, "t_2": t_2}
         # substitute HF mapped T amplitude into the CC residue equation
-        R_1, R_2 = update_amps(T_dic['t_1'], T_dic['t_2'], self.F_tilde, self.V_tilde, ERI_flag=True)
+        R_1, R_2 = update_amps(T_dic['t_1'], T_dic['t_2'], self.F_tilde, self.V_tilde, self.W_tilde, ERI_flag=True)
 
-        CC_energy = energy(T_dic['t_1'], T_dic['t_2'], self.F_tilde, self.V_tilde, ERI_flag=True)
+        CC_energy = energy(T_dic['t_1'], T_dic['t_2'], self.F_tilde, self.W_tilde, ERI_flag=True)
 
         # check if correlation energy + constant energy returns HF energy
         print("HF energy:{:.5f}".format(self.E_HF))
         print("E_0 + E_corr:{:.5f}".format(CC_energy + self.E_0))
         print("correlation energy:{:.5f}".format(CC_energy))
 
-        assert np.isclose(CC_energy + self.E_0, self.E_HF)
 
         # check if the CC reside get from HF mapped T amplitude to be zeros
         print("R_1:{:}".format(abs(R_1).max()))
         print("R_2:{:}".format(abs(R_2).max()))
+
+        assert np.isclose(CC_energy + self.E_0, self.E_HF)
         assert np.allclose(R_1, np.zeros_like(R_1), atol=1e-6)
         assert np.allclose(R_2, np.zeros_like(R_2))
         return
@@ -144,6 +145,45 @@ class two_body_model():
                              "ab": np.einsum('a,b,ab->ab', self.cos_theta, self.cos_theta, Fock_Matrix)}
         return Fock_Matrix_tilde
 
+    def _construct_spin_adapted_two_electron_integral_from_physical_Hamiltonian(self):
+        """
+        construct spin_adapted ERI based on Eq(9) in So Hirata's paper
+        Hirata et al., J. Chem. Phys. 120, 2581 (2004)
+        """
+        M = self.M
+        V = self.V
+        sin_theta = self.sin_theta
+        cos_theta = self.cos_theta
+        # initialize
+        spin_adapted_ERI = np.zeros([M, M, M, M])
+        # construct spin adapted ERI
+        for a, b, c, d in it.product(range(M), repeat=4):
+            spin_adapted_ERI[a, b, c, d] = 2 * V[a, b, c, d] - V[a, c, b, d]
+
+        # convert spin adapted ERI to physicist notation
+        # spin_adapted_ERI = np.rollaxis(spin_adapted_ERI, 1, 3)
+
+        # Bogoliubov transfrom spin adapted ERI (16 terms)
+        spin_adapted_ERI_tilde = \
+        {"ijkl": np.einsum('i,j,k,l,ijkl->ijkl', sin_theta, sin_theta, sin_theta, sin_theta, spin_adapted_ERI),
+         "abcd": np.einsum('a,b,c,d,abcd->abcd', cos_theta, cos_theta, cos_theta, cos_theta, spin_adapted_ERI),
+         "ijab": np.einsum('i,j,a,b,ijab->ijab', sin_theta, sin_theta, cos_theta, cos_theta, spin_adapted_ERI),
+         "aibc": np.einsum('a,i,b,c,aibc->aibc', cos_theta, sin_theta, cos_theta, cos_theta, spin_adapted_ERI),
+         "ijka": np.einsum('i,j,k,a,ijka->ijka', sin_theta, sin_theta, sin_theta, cos_theta, spin_adapted_ERI),
+         "aijb": np.einsum('a,i,j,b,aijb->aijb', cos_theta, sin_theta, sin_theta, cos_theta, spin_adapted_ERI),
+         "abci": np.einsum('a,b,c,i,abci->abci', cos_theta, cos_theta, cos_theta, sin_theta, spin_adapted_ERI),
+         "iajk": np.einsum('i,a,j,k,iajk->iajk', sin_theta, cos_theta, sin_theta, sin_theta, spin_adapted_ERI),
+         "iabc": np.einsum('i,a,b,c,iabc->iabc', sin_theta, cos_theta, cos_theta, cos_theta, spin_adapted_ERI),
+         "ijak": np.einsum('i,j,a,k,ijak->ijak', sin_theta, sin_theta, cos_theta, sin_theta, spin_adapted_ERI),
+         "iabj": np.einsum('i,a,b,j,iabj->iabj', sin_theta, cos_theta, cos_theta, sin_theta, spin_adapted_ERI),
+         "abij": np.einsum('a,b,i,j,abij->abij', cos_theta, cos_theta, sin_theta, sin_theta, spin_adapted_ERI),
+         "abic": np.einsum('a,b,i,c,abic->abic', cos_theta, cos_theta, sin_theta, cos_theta, spin_adapted_ERI),
+         "aibj": np.einsum('a,i,b,j,aibj->aibj', cos_theta, sin_theta, cos_theta, sin_theta, spin_adapted_ERI),
+         "aijk": np.einsum('a,i,j,k,aijk->aijk', cos_theta, sin_theta, sin_theta, sin_theta, spin_adapted_ERI),
+         "iajb": np.einsum('i,a,j,b,iajb->iajb', sin_theta, cos_theta, sin_theta, cos_theta, spin_adapted_ERI)}
+
+        return spin_adapted_ERI_tilde
+
     def thermal_field_transform(self, T):
         """conduct Bogoliubov transform on physical Hamiltonian"""
         # calculation recprical termperature
@@ -162,14 +202,14 @@ class two_body_model():
         print("Fermi-Dirac Occupation number:\n{:}".format(n_p))
         print("initial chemical potential:{:.3f}".format(mu))
 
-        # Bogoliubov transform the Hamiltonian from physical space to quasi-particle representation
+        # define matrix elements in Bogoliubov transformation
         sin_theta = np.sqrt(n_p)
         cos_theta = np.sqrt(1 - n_p)
 
         # store sin_theta and cos_theta as object as instance
         self.sin_theta = sin_theta
         self.cos_theta = cos_theta
-        # 1-electron Hamiltonian (Fock Marix)
+        # Bogoliubov transform 1-electron Hamiltonian (Fock Marix)
         self.H_core_tilde = {"ij": np.einsum('i,j,ij->ij', sin_theta, sin_theta, self.H_core),
                              "ai": np.einsum('a,i,ai->ai', cos_theta, sin_theta, self.H_core),
                              "ia": np.einsum('i,a,ia->ia', sin_theta, cos_theta, self.H_core),
@@ -185,7 +225,7 @@ class two_body_model():
                         "ia": np.einsum('i,a,ia->ia', self.sin_theta, self.cos_theta, np.eye(self.M)),
                         "ab": np.einsum('a,b,ab->ab', self.cos_theta, self.cos_theta, np.eye(self.M))}
 
-        # 2-electron Hamiltonian (16 terms)
+        # Bogoliubov transfrom ERI (16 terms)
         self.V_tilde = {"ijkl": np.einsum('i,j,k,l,ijkl->ijkl', sin_theta, sin_theta, sin_theta, sin_theta, self.V),
                         "abcd": np.einsum('a,b,c,d,abcd->abcd', cos_theta, cos_theta, cos_theta, cos_theta, self.V),
                         "ijab": np.einsum('i,j,a,b,ijab->ijab', sin_theta, sin_theta, cos_theta, cos_theta, self.V),
@@ -229,6 +269,27 @@ class two_body_model():
         print("F_tilde_ai:\n{:}".format(self.F_tilde['ai'].shape))
         print("F_tilde_ia:\n{:}".format(self.F_tilde['ia'].shape))
         print("F_tilde_ab:\n{:}".format(self.F_tilde['ab'].shape))
+
+        # constructed spin adapted ERI
+        self.W_tilde = self._construct_spin_adapted_two_electron_integral_from_physical_Hamiltonian()
+
+        print("spin adapted ERI in quasi-particle representation")
+        print("W_tilde_ijkl:\n{:}".format(self.W_tilde['ijkl'].shape))
+        print("W_tilde_abcd:\n{:}".format(self.W_tilde['abcd'].shape))
+        print("W_tilde_ijab:\n{:}".format(self.W_tilde['ijab'].shape))
+        print("W_tilde_aibc:\n{:}".format(self.W_tilde['aibc'].shape))
+        print("W_tilde_ijka:\n{:}".format(self.W_tilde['ijka'].shape))
+        print("W_tilde_aijb:\n{:}".format(self.W_tilde['aijb'].shape))
+        print("W_tilde_abci:\n{:}".format(self.W_tilde['abci'].shape))
+        print("W_tilde_iajk:\n{:}".format(self.W_tilde['iajk'].shape))
+        print("W_tilde_iabc:\n{:}".format(self.W_tilde['iabc'].shape))
+        print("W_tilde_ijak:\n{:}".format(self.W_tilde['ijak'].shape))
+        print("W_tilde_iabj:\n{:}".format(self.W_tilde['iabj'].shape))
+        print("W_tilde_abij:\n{:}".format(self.W_tilde['abij'].shape))
+        print("W_tilde_abic:\n{:}".format(self.W_tilde['abic'].shape))
+        print("W_tilde_aibj:\n{:}".format(self.W_tilde['aibj'].shape))
+        print("W_tilde_aijk:\n{:}".format(self.W_tilde['aijk'].shape))
+        print("W_tilde_iajb:\n{:}".format(self.W_tilde['iajb'].shape))
 
         # determine the constant shift
         self.E_0 = np.trace(np.einsum('ij,jk->jk', 0.5 * (self.H_core + self.F), RDM_1)) * 2
