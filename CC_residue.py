@@ -114,7 +114,7 @@ def cc_Wvoov(t1, t2, F_tilde, V_tilde):
     Wakic += lib.einsum('ldkc,ilad->akic', eris_ovov, t2)
     return Wakic
 
-def update_amps(t1, t2, F_tilde, V_tilde, W_tilde, cc2=False, ERI_flag=False):
+def residue(t1, t2, F_tilde, V_tilde, W_tilde, cc2=False, ERI_flag=False):
     """Singles and Doubles residue equation"""
     # Ref: Hirata et al., J. Chem. Phys. 120, 2581 (2004) Eqs.(35)-(36)
     # assert(isinstance(eris, ccsd._ChemistsERIs))

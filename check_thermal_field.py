@@ -67,9 +67,9 @@ class two_body_model():
     def _mapping_HF_density_matrix_to_t_1_amplitude(self):
         """compute t_1 amplitude from occupation number of HF calculation"""
         # take occupation number as diagonal element of the 1-RDM
-        RDM_1 = np.diag(self.HF_occupation_number)
-        t_1 = np.zeros_like(RDM_1)
-        t_1 += RDM_1
+        RDM_HF = np.diag(self.HF_occupation_number)
+        t_1 = np.zeros_like(RDM_HF)
+        t_1 += RDM_HF
         t_1 -= np.einsum('pq,p,q->pq', np.eye(self.M), self.sin_theta, self.sin_theta)
         t_1 /= np.einsum('q,p->pq', self.cos_theta, self.sin_theta)
 
@@ -82,7 +82,7 @@ class two_body_model():
         t_2 = np.zeros([self.M, self.M, self.M, self.M])
         T_dic = {"t_1": t_1, "t_2": t_2}
         # substitute HF mapped T amplitude into the CC residue equation
-        R_1, R_2 = update_amps(T_dic['t_1'], T_dic['t_2'], self.F_tilde, self.V_tilde, self.W_tilde, ERI_flag=True)
+        R_1, R_2 = residue(T_dic['t_1'], T_dic['t_2'], self.F_tilde, self.V_tilde, self.W_tilde, ERI_flag=True)
 
         CC_energy = energy(T_dic['t_1'], T_dic['t_2'], self.F_tilde, self.W_tilde, ERI_flag=True)
 
@@ -143,7 +143,7 @@ class two_body_model():
                              "ai": np.einsum('a,i,ai->ai', self.cos_theta, self.sin_theta, Fock_Matrix),
                              "ia": np.einsum('i,a,ia->ia', self.sin_theta, self.cos_theta, Fock_Matrix),
                              "ab": np.einsum('a,b,ab->ab', self.cos_theta, self.cos_theta, Fock_Matrix)}
-        return Fock_Matrix_tilde
+        return Fock_Matrix_tilde, Fock_Matrix
 
     def _construct_spin_adapted_two_electron_integral_from_physical_Hamiltonian(self):
         """
@@ -184,20 +184,21 @@ class two_body_model():
 
         return spin_adapted_ERI_tilde
 
-    def thermal_field_transform(self, T):
+    def thermal_field_transform(self, T, debug=False):
         """conduct Bogoliubov transform on physical Hamiltonian"""
         # calculation recprical termperature
         beta = 1. / (self.kb * T)
         print("beta:{:.3f}".format(beta))
-
-        # Diagonalize Fock matrix
-        E_mf, V_mf = np.linalg.eigh(self.F)
+        # print("Fock matrix:{:}".format(self.F))
+        # check if Fock matrix is diagonal
+        if debug:
+            assert np.allclose(self.F, np.diag(np.diag(self.F)), atol=1e-5)
 
         # calculate Femi-Dirac occupation number with chemical potential that fixex total number of electron
-        n_p, mu = self.Cal_mu_FD(E_mf, beta)
+        n_p, mu = self.Cal_mu_FD(np.diag(self.F), beta)
 
-        # 1-RDM at reference temperature
-        RDM_1 = np.dot(V_mf, np.dot(np.diag(n_p), V_mf.transpose()))
+        # construct 1-RDM in canonical basis
+        RDM_1 = np.diag(n_p)
 
         print("Fermi-Dirac Occupation number:\n{:}".format(n_p))
         print("initial chemical potential:{:.3f}".format(mu))
@@ -262,7 +263,7 @@ class two_body_model():
         print("V_tilde_iajb:\n{:}".format(self.V_tilde['iajb'].shape))
 
         # construct Fock matrix from 1-electron and 2-electron integrals
-        self.F_tilde = self._construct_fock_matrix_from_physical_Hamiltonian(RDM_1)
+        self.F_tilde, self.F_physical = self._construct_fock_matrix_from_physical_Hamiltonian(RDM_1)
 
         print("Fock_Matrix in quasi-particle representation:")
         print("F_tilde_ij:\n{:}".format(self.F_tilde['ij'].shape))
@@ -292,7 +293,7 @@ class two_body_model():
         print("W_tilde_iajb:\n{:}".format(self.W_tilde['iajb'].shape))
 
         # determine the constant shift
-        self.E_0 = np.trace(np.einsum('ij,jk->jk', 0.5 * (self.H_core + self.F), RDM_1)) * 2
+        self.E_0 = np.trace(np.einsum('ij,jk->jk', 0.5 * (self.H_core + self.F_physical), RDM_1)) * 2
 
         print("constant term:{:}".format(self.E_0))
 
