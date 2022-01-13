@@ -67,7 +67,8 @@ def main():
     # setup model input using gaussian-type-orbitals
     molecular_HF = gto.M(
            atom=atom,  # in Angstrom
-           basis='ccpvdz',
+           # basis='ccpvdz',
+           basis="6-31g",
            symmetry=1,
     )
 
@@ -94,9 +95,9 @@ def main():
     # run TFCC & thermal NOE calculation
     model = two_body_model(E_Hartree_Fock, h_core, fock_matrix, eri_integral, nof_electron, molecule=molecule)
     # thermal field transform
-    model.thermal_field_transform(T=3e5)
+    model.thermal_field_transform(T=5e5)
     # TFCC imaginary time integration
-    model.rk45_integration(T_final=5e4)
+    model.rk45_integration(T_final=2e4)
     # plot thermal properties
     model.Plot_thermal()
 

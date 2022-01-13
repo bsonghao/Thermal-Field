@@ -6,7 +6,7 @@ from math import factorial, isclose
 from scipy.linalg import eigh
 from CC_residue import *
 from scipy.integrate import solve_ivp
-
+import itertools as it
 
 class two_body_model():
     """ Define a object that implement thermal field coupled_cluster
@@ -31,10 +31,10 @@ class two_body_model():
         self.H_core = H_core
 
         # construct Fock matrix (from 1e and 2e integral)
-        self.F = Fock
+        self.F_ground_state = Fock
 
         # number of MOs
-        self.M = self.F.shape[0]
+        self.M = self.F_ground_state.shape[0]
 
         # f and f_bar defines contraction in thermal NOE
         self.f = self.n_occ / self.M
@@ -47,9 +47,9 @@ class two_body_model():
         # constant part of the full Hamiltonian (H_0)
         print("HF ground state energy:{:.5f}".format(self.E_HF))
         # one-electron Hamiltonian   (H_1)
-        print('One-electron part of the Hamiltonian (H_1):\n{:}'.format(self.F.shape))
+        print('Ground state Fock matrix:\n{:}'.format(self.F_ground_state.shape))
         # two-electron Hamiltnoain (H_2)
-        print("Two-electron part of the Hamiltonian (H_2):\n{:}".format(self.V.shape))
+        print("Two-electron integrals:\n{:}".format(self.V.shape))
 
         # Boltzmann constant(Hartree T-1)
         self.kb = 3.1668152e-06
@@ -80,42 +80,60 @@ class two_body_model():
                 mu = - np.log(1./self.f - 1)
         return n_p, mu
 
+    def _construct_fock_matrix_from_physical_Hamiltonian(self, RDM_1):
+        """construct fock matrix from 1-electron, 2-electron integral in physical space and then BV
+        transform to quasi-particle space
+        """
+        M = self.M
+        # initialize
+        Fock_Matrix = np.zeros([M, M])
+        # add core electron part
+        Fock_Matrix += self.H_core
+        # add effective two electron part
+        for a, b, c, d in it.product(range(M), repeat=4):
+            Fock_Matrix[a, b] += RDM_1[c, d] * (2 * self.V[a, b, c, d] - self.V[a, c, b, d])
+        # Bogoliubov transform the Fock_matrix
+        Fock_Matrix_tilde = {"ij": np.einsum('i,j,ij->ij', self.sin_theta, self.sin_theta, Fock_Matrix),
+                             "ai": np.einsum('a,i,ai->ai', self.cos_theta, self.sin_theta, Fock_Matrix),
+                             "ia": np.einsum('i,a,ia->ia', self.sin_theta, self.cos_theta, Fock_Matrix),
+                             "ab": np.einsum('a,b,ab->ab', self.cos_theta, self.cos_theta, Fock_Matrix)}
+        return Fock_Matrix_tilde, Fock_Matrix
+
     def thermal_field_transform(self, T):
         """conduct Bogoliubov transform on physical Hamiltonian"""
         # calculation recprical termperature
         beta = 1. / (self.kb * T)
         print("beta:{:.3f}".format(beta))
 
-        # Diagonalize Fock matrix
-        E_mf, V_mf = np.linalg.eigh(self.F)
-
         # calculate Femi-Dirac occupation number with chemical potential that fixex total number of electron
-        n_p, mu = self.Cal_mu_FD(E_mf, beta)
+        FD_occupation_number, mu = self.Cal_mu_FD(np.diag(self.F_ground_state), beta)
 
-        # 1-RDM at reference temperature
-        RDM_1 = np.dot(V_mf, np.dot(np.diag(n_p), V_mf.transpose()))
+        # construct 1-RDM in canonical basis
+        RDM_1 = np.diag(FD_occupation_number)
 
-        print("Fermi-Dirac Occupation number:\n{:}".format(n_p))
+        print("Fermi-Dirac Occupation number:\n{:}".format(FD_occupation_number))
         print("initial chemical potential:{:.3f}".format(mu))
 
         # Bogoliubov transform the Hamiltonian from physical space to quasi-particle representation
-        sin_theta = np.sqrt(n_p)
-        cos_theta = np.sqrt(1 - n_p)
+        sin_theta = np.sqrt(FD_occupation_number)
+        cos_theta = np.sqrt(1 - FD_occupation_number)
 
         # store sin_theta and cos_theta as object as instance
         self.sin_theta = sin_theta
         self.cos_theta = cos_theta
-        # 1-electron Hamiltonian (Fock Marix)
-        self.F_tilde = {"ij": np.einsum('i,j,ij->ij', sin_theta, sin_theta, self.F),
-                        "ai": np.einsum('a,i,ai->ai', cos_theta, sin_theta, self.F),
-                        "ia": np.einsum('i,a,ia->ia', sin_theta, cos_theta, self.F),
-                        "ab": np.einsum('a,b,ab->ab', cos_theta, cos_theta, self.F)}
-        print("1-electron Hamiltonian in quasi-particle representation:")
-        print("F_tilde_ij:\n{:}".format(self.F_tilde['ij'].shape))
-        print("F_tilde_ai:\n{:}".format(self.F_tilde['ai'].shape))
-        print("F_tilde_ia:\n{:}".format(self.F_tilde['ia'].shape))
-        print("F_tilde_ab:\n{:}".format(self.F_tilde['ab'].shape))
+        # Bogoliubov transform 1-electron Hamiltonian (Fock Marix)
+        self.H_core_tilde = {"ij": np.einsum('i,j,ij->ij', sin_theta, sin_theta, self.H_core),
+                             "ai": np.einsum('a,i,ai->ai', cos_theta, sin_theta, self.H_core),
+                             "ia": np.einsum('i,a,ia->ia', sin_theta, cos_theta, self.H_core),
+                             "ab": np.einsum('a,b,ab->ab', cos_theta, cos_theta, self.H_core)}
 
+        print("1-electron Hamiltonian in quasi-particle representation:")
+        print("H_core_tilde_ij:\n{:}".format(self.H_core_tilde['ij'].shape))
+        print("H_core_tilde_ai:\n{:}".format(self.H_core_tilde['ai'].shape))
+        print("H_core_tilde_ia:\n{:}".format(self.H_core_tilde['ia'].shape))
+        print("H_core_tilde_ab:\n{:}".format(self.H_core_tilde['ab'].shape))
+
+        # Bogoliubov transform the one body density matrix at zero beta
         self.n_tilde = {"ij": np.einsum('i,j,ij->ij', self.sin_theta, self.sin_theta, np.eye(self.M)),
                         "ai": np.einsum('a,i,ai->ai', self.cos_theta, self.sin_theta, np.eye(self.M)),
                         "ia": np.einsum('i,a,ia->ia', self.sin_theta, self.cos_theta, np.eye(self.M)),
@@ -157,8 +175,11 @@ class two_body_model():
         print("V_tilde_aijk:\n{:}".format(self.V_tilde['aijk'].shape))
         print("V_tilde_iajb:\n{:}".format(self.V_tilde['iajb'].shape))
 
+        # construct Fock matrix from 1-electron and 2-electron integrals
+        self.F_tilde, self.F_physical = self._construct_fock_matrix_from_physical_Hamiltonian(RDM_1)
+
         # determine the constant shift
-        self.E_0 = np.trace(np.einsum('ij,jk->jk', 0.5 * (self.H_core + self.F), RDM_1)) * 2
+        self.E_0 = np.trace(np.einsum('ij,jk->jk', 0.5 * (self.H_core + self.F_physical), RDM_1)) * 2
 
         print("constant term:{:}".format(self.E_0))
 
@@ -216,7 +237,7 @@ class two_body_model():
 
         return
 
-    def _rk45_solve_ivp_integration_function(self, tau, y_tensor, T_final, chemical_potential=True):
+    def _rk45_solve_ivp_integration_function(self, tau, y_tensor, T_final, chemical_potential=True, T2_flag=True):
         """ Integration function used by `solve_ivp` integrator inside `rk45_integration` method."""
         def correct_occupation_number(occ, nat):
             """correct occupation number is n_p <0 or n_p > 1"""
@@ -276,6 +297,9 @@ class two_body_model():
             R_0 -= mu * self.n_occ
             self.mu.append((tau, mu))
 
+        if not T2_flag:
+            # turnning off the update of double amplitude if T2_flag is False
+            R_2 = np.zeros_like(R_2)
         # print process
         self._print_integration_progress(tau, T_final, self.Z[-1][1], self.E[-1][1], mu, self.n_el[-1][1], occ)
         R = {"t_0": -R_0, "t_1": -R_1, "t_2": -R_2}
@@ -284,7 +308,7 @@ class two_body_model():
 
         return delta_y_tensor
 
-    def _postprocess_rk45_integration_results(self, sol):
+    def _postprocess_rk45_integration_results(self, sol, T2_flag=True):
         """process and store data for thermal properties"""
         # convert imaginary time to temperature
         self.T_cc = 1. / (self.kb * sol.t[1:])
@@ -325,7 +349,10 @@ class two_body_model():
                         "U": self.E_cc[1:], "n_el": self.n_el_cc[1:]}
 
         df = pd.DataFrame(thermal_prop)
-        df.to_csv("thermal_properties_TFCC_for_{:}.csv".format(self.molecule), index=False)
+        if not T2_flag:
+            df.to_csv("thermal_properties_TFCC_for_{:}_single.csv".format(self.molecule), index=False)
+        else:
+            df.to_csv("thermal_properties_TFCC_for_{:}.csv".format(self.molecule), index=False)
 
         # store occupation number data (from CC)
         occ_dic = {"T": self.T_cc}
@@ -336,7 +363,10 @@ class two_body_model():
                     occ_data.append(self.n_p_cc[j][i])
             occ_dic[i] = occ_data
         df = pd.DataFrame(occ_dic)
-        df.to_csv("occupation_number_TFCC_for_{:}.csv".format(self.molecule), index=False)
+        if not T2_flag:
+            df.to_csv("occupation_number_TFCC_for_{:}_single.csv".format(self.molecule), index=False)
+        else:
+            df.to_csv("occupation_number_TFCC_for_{:}.csv".format(self.molecule), index=False)
         return
 
     def rk45_integration(self, T_final, N=10000):
@@ -400,7 +430,7 @@ class two_body_model():
     def Plot_thermal(self, compare=False):
         """plot thermal properties as function of temperature"""
         # read therma property data
-        thermal_prop = pd.read_csv("thermal_properties_TFCC.csv")
+        thermal_prop = pd.read_csv("thermal_properties_TFCC_for_{:}.csv".format(self.molecule))
         if compare:
             thermal_prop_FD = pd.read_csv("thermal_properties_FD.csv")
             thermal_prop_NOE = pd.read_csv("thermal_properties_NOE.csv")
@@ -453,7 +483,7 @@ class two_body_model():
         plt.show()
 
         # read in occupation number data
-        occ_TFCC = pd.read_csv("occupation_number_TFCC.csv")
+        occ_TFCC = pd.read_csv("occupation_number_TFCC_for_{:}.csv".format(self.molecule))
         if compare:
             occ_FD = pd.read_csv("occupation_number_FD.csv")
             occ_NOE = pd.read_csv("occupation_number_NOE.csv")

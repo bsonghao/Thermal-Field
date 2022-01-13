@@ -18,7 +18,7 @@ import pyscf
 
 mol = pyscf.M(
     atom = HF,
-    basis = 'ccpvdz')
+    basis = '6-31g')
 
 mf = mol.RHF().run()
 
