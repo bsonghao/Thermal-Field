@@ -232,7 +232,7 @@ class two_body_model():
         print("F_tilde_ia:\n{:}".format(self.F_tilde['ia'].shape))
         print("F_tilde_ab:\n{:}".format(self.F_tilde['ab'].shape))
         # determine the constant shift
-        self.E_0 = np.trace(np.einsum('ij,jk->jk', 0.5 * (self.H_core + self.F_physical), RDM_1)) * 2
+        self.E_0 = np.trace(np.dot((self.H_core + self.F), RDM_1))
 
         print("constant term:{:}".format(self.E_0))
 
