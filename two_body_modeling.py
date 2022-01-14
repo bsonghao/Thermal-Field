@@ -183,7 +183,7 @@ class two_body_model():
         self.F_tilde, self.F_physical = self._construct_fock_matrix_from_physical_Hamiltonian(RDM_1)
 
         # determine the constant shift
-        self.E_0 = np.trace(np.einsum('ij,jk->jk', 0.5 * (self.H_core + self.F_physical), RDM_1)) * 2
+        self.E_0 = np.trace(np.dot((self.H_core + self.F_physical), RDM_1))
 
         print("constant term:{:}".format(self.E_0))
 
