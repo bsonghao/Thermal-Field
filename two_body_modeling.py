@@ -12,7 +12,7 @@ class two_body_model():
     """ Define a object that implement thermal field coupled_cluster
         method and thermal NOE method
         for GS and thermal property calculations for two-electron Hamiltonian """
-    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, molecule):
+    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, molecule, T_2_flag=True, chemical_potential=True):
         """
         E_HF: energy expectation value (Hartree Fock GS energy)
         H_core: core electron Hamiltonian
@@ -20,6 +20,8 @@ class two_body_model():
         V_eri: 2-electron integral (chemist's notation)
         M: dimension of MO basis
         molecule: name of the molecule for testing
+        T_2_flag: boolean to determine whether to update T_2 amplitude
+        chemical_potential: boolean to determine whether to introduce chemical potential in the integration
         (all electron integrals are represented in MO basis)
         """
         print("***<start of input parameters>***")
@@ -30,6 +32,8 @@ class two_body_model():
         # core electron Hamiltonian
         self.H_core = H_core
 
+        self.T_2_flag = T_2_flag
+        self.chemical_potential = chemical_potential
         # construct Fock matrix (from 1e and 2e integral)
         self.F_ground_state = Fock
 
@@ -237,7 +241,7 @@ class two_body_model():
 
         return
 
-    def _rk45_solve_ivp_integration_function(self, tau, y_tensor, T_final, chemical_potential=True, T2_flag=True):
+    def _rk45_solve_ivp_integration_function(self, tau, y_tensor, T_final):
         """ Integration function used by `solve_ivp` integrator inside `rk45_integration` method."""
         def correct_occupation_number(occ, nat):
             """correct occupation number is n_p <0 or n_p > 1"""
@@ -284,7 +288,7 @@ class two_body_model():
         # total number of electrons
         self.n_el.append((tau, np.sum(occ)))
 
-        if chemical_potential:
+        if self.chemical_potential:
             # compute chemical potential
             delta_1, delta_2 = \
                             update_amps(T['t_1'], T['t_2'], self.n_tilde, np.zeros([self.M, self.M, self.M, self.M]), flag=True)
@@ -295,10 +299,14 @@ class two_body_model():
             R_1 -= mu * delta_1
             R_2 -= mu * delta_2
             R_0 -= mu * self.n_occ
-            self.mu.append((tau, mu))
 
-        if not T2_flag:
-            # turnning off the update of double amplitude if T2_flag is False
+        else:
+            mu = 0
+
+        self.mu.append((tau, mu))
+
+        if not self.T_2_flag:
+            # turnning off the update of double amplitude if T_2_flag is False
             R_2 = np.zeros_like(R_2)
         # print process
         self._print_integration_progress(tau, T_final, self.Z[-1][1], self.E[-1][1], mu, self.n_el[-1][1], occ)
@@ -308,7 +316,7 @@ class two_body_model():
 
         return delta_y_tensor
 
-    def _postprocess_rk45_integration_results(self, sol, T2_flag=True):
+    def _postprocess_rk45_integration_results(self, sol):
         """process and store data for thermal properties"""
         # convert imaginary time to temperature
         self.T_cc = 1. / (self.kb * sol.t[1:])
@@ -349,7 +357,7 @@ class two_body_model():
                         "U": self.E_cc[1:], "n_el": self.n_el_cc[1:]}
 
         df = pd.DataFrame(thermal_prop)
-        if not T2_flag:
+        if not self.T_2_flag:
             df.to_csv("thermal_properties_TFCC_for_{:}_single.csv".format(self.molecule), index=False)
         else:
             df.to_csv("thermal_properties_TFCC_for_{:}.csv".format(self.molecule), index=False)
@@ -363,7 +371,7 @@ class two_body_model():
                     occ_data.append(self.n_p_cc[j][i])
             occ_dic[i] = occ_data
         df = pd.DataFrame(occ_dic)
-        if not T2_flag:
+        if not self.T_2_flag:
             df.to_csv("occupation_number_TFCC_for_{:}_single.csv".format(self.molecule), index=False)
         else:
             df.to_csv("occupation_number_TFCC_for_{:}.csv".format(self.molecule), index=False)
@@ -398,8 +406,8 @@ class two_body_model():
 
         initial_y_tensor = self.ravel_T_tensor({"t_0": t_0, "t_1": t_1, "t_2": t_2})
 
-        relative_tolerance = 1e-3
-        absolute_tolerance = 1e-6
+        relative_tolerance = 1e-7
+        absolute_tolerance = 1e-8
 
         integration_function = self._rk45_solve_ivp_integration_function
 

@@ -93,11 +93,12 @@ def main():
     NR_energy = mean_field.energy_nuc()
 
     # run TFCC & thermal NOE calculation
-    model = two_body_model(E_Hartree_Fock, h_core, fock_matrix, eri_integral, nof_electron, molecule=molecule)
+    model = two_body_model(E_Hartree_Fock, h_core, fock_matrix, eri_integral, nof_electron, molecule=molecule,
+                           T_2_flag=False, chemical_potential=False)
     # thermal field transform
     model.thermal_field_transform(T=5e5)
     # TFCC imaginary time integration
-    model.rk45_integration(T_final=2e4)
+    model.rk45_integration(T_final=1.1e4)
     # plot thermal properties
     model.Plot_thermal()
 
