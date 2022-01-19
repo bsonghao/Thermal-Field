@@ -12,7 +12,7 @@ class two_body_model():
     """ Define a object that implement thermal field coupled_cluster
         method and thermal NOE method
         for GS and thermal property calculations for two-electron Hamiltonian """
-    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, molecule, T_2_flag=True, chemical_potential=True):
+    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, molecule, E_NN, T_2_flag=True, chemical_potential=True):
         """
         E_HF: energy expectation value (Hartree Fock GS energy)
         H_core: core electron Hamiltonian
@@ -20,6 +20,7 @@ class two_body_model():
         V_eri: 2-electron integral (chemist's notation)
         M: dimension of MO basis
         molecule: name of the molecule for testing
+        E_NN: nuclear repulsion energy
         T_2_flag: boolean to determine whether to update T_2 amplitude
         chemical_potential: boolean to determine whether to introduce chemical potential in the integration
         (all electron integrals are represented in MO basis)
@@ -36,6 +37,9 @@ class two_body_model():
         self.chemical_potential = chemical_potential
         # construct Fock matrix (from 1e and 2e integral)
         self.F_ground_state = Fock
+
+        # nuclear repulsion energy
+        self.E_NN = E_NN
 
         # number of MOs
         self.M = self.F_ground_state.shape[0]
@@ -267,9 +271,9 @@ class two_body_model():
                 np.einsum('q,p,qp->pq', self.cos_theta, self.sin_theta, T['t_1'])
         # compute occupation number and store them
         occ, nat = np.linalg.eigh(RDM_1)
-        if min(occ) < 0 or max(occ) > 1:
+        # if min(occ) < 0 or max(occ) > 1:
             # add correction when occupation number become abnormal
-            occ = correct_occupation_number(occ, nat)
+            # occ = correct_occupation_number(occ, nat)
         self.n_p.append((tau, occ))
 
         # compute partition function
@@ -282,6 +286,9 @@ class two_body_model():
         R_0 = energy(T['t_1'], T['t_2'], self.F_tilde, self.V_tilde)
         # apply constant shift to energy equation
         R_0 += self.E_0
+
+        # add nuclear repusion energy to the energy equation
+        R_0 += self.E_NN
 
         self.E.append((tau, R_0))
 
@@ -406,8 +413,8 @@ class two_body_model():
 
         initial_y_tensor = self.ravel_T_tensor({"t_0": t_0, "t_1": t_1, "t_2": t_2})
 
-        relative_tolerance = 1e-7
-        absolute_tolerance = 1e-8
+        relative_tolerance = 1e-10
+        absolute_tolerance = 1e-12
 
         integration_function = self._rk45_solve_ivp_integration_function
 
