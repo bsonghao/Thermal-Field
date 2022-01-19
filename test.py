@@ -67,8 +67,8 @@ def main():
     # setup model input using gaussian-type-orbitals
     molecular_HF = gto.M(
            atom=atom,  # in Angstrom
-           # basis= "6-31g",
-           basis = 'ccpvdz',
+           basis= "6-31g",
+           # basis = 'ccpvdz',
            symmetry=1,
     )
 
@@ -93,7 +93,7 @@ def main():
     NR_energy = mean_field.energy_nuc()
 
     # run TFCC & thermal NOE calculation
-    model = two_body_model(E_Hartree_Fock, h_core, fock_matrix, eri_integral, nof_electron, OccupationNumber, molecule=molecule)
+    model = two_body_model(E_Hartree_Fock, h_core, fock_matrix, eri_integral, nof_electron, OccupationNumber, molecule=molecule, E_NN=NR_energy)
     # thermal field transform
     model.thermal_field_transform(T=5e5)
     # check CC CC_residue

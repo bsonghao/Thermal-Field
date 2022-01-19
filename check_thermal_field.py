@@ -13,7 +13,7 @@ class two_body_model():
     """ Define a object that implement thermal field coupled_cluster
         method and thermal NOE method
         for GS and thermal property calculations for two-electron Hamiltonian """
-    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, HF_occupation_number, molecule):
+    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, HF_occupation_number, molecule, E_NN):
         """
         E_HF: energy expectation value (Hartree Fock GS energy)
         H_core: core electron Hamiltonian
@@ -21,6 +21,7 @@ class two_body_model():
         V_eri: 2-electron integral (chemist's notation)
         M: dimension of MO basis
         molecule: name of the molecule for testing
+        E_NN: nuclear-nuclear repulsion energy
         (all electron integrals are represented in MO basis)
         """
         print("***<start of input parameters>***")
@@ -40,6 +41,9 @@ class two_body_model():
 
         # number of MOs
         self.M = self.F.shape[0]
+
+        # nuclear repusion energy
+        self.E_NN = E_NN
 
         # f and f_bar defines contraction in thermal NOE
         self.f = self.n_occ / self.M
@@ -88,7 +92,7 @@ class two_body_model():
 
         # check if correlation energy + constant energy returns HF energy
         print("HF energy:{:.5f}".format(self.E_HF))
-        print("E_0 + E_corr:{:.5f}".format(CC_energy + self.E_0))
+        print("E_0 + E_corr:{:.5f}".format(CC_energy + self.E_0 + self.E_NN))
         print("correlation energy:{:.5f}".format(CC_energy))
 
 
@@ -97,7 +101,7 @@ class two_body_model():
         print("R_2:{:}".format(abs(R_2).max()))
 
         assert np.allclose(R_1, np.zeros_like(R_1), atol=1e-6)
-        assert np.isclose(CC_energy + self.E_0, self.E_HF)
+        assert np.isclose(CC_energy + self.E_0 + self.E_NN, self.E_HF)
 
         return
 
@@ -232,7 +236,7 @@ class two_body_model():
         print("F_tilde_ia:\n{:}".format(self.F_tilde['ia'].shape))
         print("F_tilde_ab:\n{:}".format(self.F_tilde['ab'].shape))
         # determine the constant shift
-        self.E_0 = np.trace(np.dot((self.H_core + self.F), RDM_1))
+        self.E_0 = np.trace(np.dot((self.H_core + self.F_physical), RDM_1))
 
         print("constant term:{:}".format(self.E_0))
 
