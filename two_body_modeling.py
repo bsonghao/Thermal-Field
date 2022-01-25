@@ -257,9 +257,11 @@ class two_body_model():
                 R_2 -= mu * delta_2
 
                 E -= mu * self.n_occ
-                
+
             # update CC amplitude
-            T['t_2'] -= R_2 * dtau
+            if self.T_2_flag:
+                T['t_2'] -= R_2 * dtau
+                
             T['t_1'] -= R_1 * dtau
             T['t_0'] -= E * dtau
             # (E - mu * self.n_occ) * dtau
