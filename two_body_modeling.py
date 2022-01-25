@@ -193,6 +193,57 @@ class two_body_model():
 
         return
 
+    def _symmetrize_density_matrix(self, RDM_1, RDM_2):
+        """symmetrize 1 and 2-RDM and mapping them to T amplitude"""
+        def symmetrize_RDM_1(RDM_1):
+            """symmetrize 1-RDM"""
+            RDM_1_sym = np.zeros_like(RDM_1)
+            RDM_1_sym += RDM_1
+            RDM_1_sym += RDM_1.transpose()
+            RDM_1_sym *= 0.5
+            return RDM_1_sym
+
+        def symmetrize_RDM_2(RDM_2):
+            """symmetrize 2-RDM"""
+            RDM_2_sym = np.zeros_like(RDM_2)
+            RDM_2_sym += RDM_2
+            RDM_2_sym += RDM_2.transpose(2, 3, 0, 1)
+            RDM_2_sym *= 0.5
+            return RDM_2_sym
+
+        def map_t_1_from_RDM(RDM_1):
+            """map T_1 amplitude from symmetrized RDM_1"""
+            T_1 = np.zeros_like(RDM_1)
+            T_1 += RDM_1
+            T_1 -= np.einsum('p,q,pq->pq', self.sin_theta, self.sin_theta, np.eye(self.M))
+            T_1 /= np.einsum('q,p->pq', self.cos_theta, self.sin_theta)
+            return T_1
+
+        def map_t_2_from_RDM(RDM_1, RDM_2):
+            """map T_2 amplitude from symmetrized RDM_1 and RDM_1"""
+            T_2 = np.zeros_like(RDM_2)
+            T_2 += RDM_2
+            T_2 -= np.einsum('pr,qs->pqrs', RDM_1, RDM_1)
+            T_2 += np.einsum('ps,qr->pqrs', RDM_1, RDM_1)
+            T_2 /= np.einsum('r,s,p,q->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta)
+            return T_2
+
+        # symmetrize density matrix
+        RDM_1_sym = symmetrize_RDM_1(RDM_1)
+        RDM_2_sym = symmetrize_RDM_2(RDM_2)
+
+        # map T amplitude from symmetrize 1-RDM and 2-RDM
+        T_1_sym = map_t_1_from_RDM(RDM_1_sym)
+        T_2_sym = map_t_2_from_RDM(RDM_1_sym, RDM_2_sym)
+
+        # check if the quantities are symmetrized as expected
+        assert np.allclose(RDM_1_sym, RDM_1_sym.transpose())
+        assert np.allclose(RDM_2_sym, RDM_2_sym.transpose(2, 3, 0, 1))
+        # assert np.allclose(T_1_sym, T_1_sym.transpose())
+        # assert np.allclose(T_2_sym, T_2_sym.transpose(2, 3, 0, 1))
+
+        return RDM_1_sym, RDM_2_sym, T_1_sym, T_2_sym
+
     def TFCC_integration(self, T_final, N):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties"""
         # map initial T amplitude from reduced density matrix at zero beta
@@ -261,7 +312,7 @@ class two_body_model():
             # update CC amplitude
             if self.T_2_flag:
                 T['t_2'] -= R_2 * dtau
-                
+
             T['t_1'] -= R_1 * dtau
             T['t_0'] -= E * dtau
             # (E - mu * self.n_occ) * dtau
@@ -272,20 +323,26 @@ class two_body_model():
             RDM_1 = np.einsum('p,q,pq->pq', self.sin_theta, self.sin_theta, np.eye(self.M)) +\
                     np.einsum('q,p,qp->pq', self.cos_theta, self.sin_theta, T['t_1'])
             # 2-RDM (chemist's notation)
-            RDM_2 = np.einsum('pr,qs->prqs', RDM_1, RDM_1)
-            RDM_2 -= np.einsum('ps,qr->prqs', RDM_1, RDM_1)
-            RDM_2 += np.einsum('r,s,p,q,rpsq->prqs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T['t_2'])
+            RDM_2 = np.einsum('pr,qs->pqrs', RDM_1, RDM_1)
+            RDM_2 -= np.einsum('ps,qr->pqrs', RDM_1, RDM_1)
+            RDM_2 += np.einsum('r,s,p,q,rspq->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T['t_2'])
+
+            # symmetrize density matrix and T amplitude
+            RDM_1_sym, RDM_2_sym, T_1_sym, T_2_sym = self._symmetrize_density_matrix(RDM_1, RDM_2)
+            T['t_1'] = T_1_sym
+            if self.T_2_flag:
+                T['t_2'] = T_2_sym
 
             # compute occupation number
-            occ, nat = np.linalg.eigh(RDM_1)
+            occ, nat = np.linalg.eigh(RDM_1_sym)
             # number of electron
             n_el = sum(occ)
 
             # print and store properties along the propagation
             if i != 0:
                 print("Temperature: {:.3f} K".format(1. / (self.kb * beta_tmp)))
-                print("max 1-RDM:\n{:.3f}".format(abs(RDM_1).max()))
-                print("max 2-RDM:\n{:.3f}".format(abs(RDM_2).max()))
+                print("max 1-RDM:\n{:.3f}".format(abs(RDM_1_sym).max()))
+                print("max 2-RDM:\n{:.3f}".format(abs(RDM_2_sym).max()))
                 print("number of electron:{:.3f}".format(n_el))
                 if self.chemical_potential:
                     print("chemical potential:{:} cm-1".format(mu))
@@ -315,7 +372,10 @@ class two_body_model():
                         "U": self.E_th, "n_el": self.n_el_th}
 
         df = pd.DataFrame(thermal_prop)
-        df.to_csv("thermal_properties_TFCC.csv", index=False)
+        if self.T_2_flag:
+            df.to_csv("thermal_properties_TFCC_CCSD_sym.csv", index=False)
+        else:
+            df.to_csv("thermal_properties_TFCC_CCS_sym.csv", index=False)
 
         # store occupation number data (from CC)
         occ_dic = {"T": self.T_grid}
