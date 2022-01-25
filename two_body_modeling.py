@@ -193,7 +193,7 @@ class two_body_model():
 
         return
 
-    def TFCC_integration(self, T_final, N, chemical_potential=True):
+    def TFCC_integration(self, T_final, N):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties"""
         # map initial T amplitude from reduced density matrix at zero beta
         ## 1-RDM
@@ -245,7 +245,7 @@ class two_body_model():
             # apply nuclear repulsion energy to energy equation
             E += self.E_NN
 
-            if chemical_potential:
+            if self.chemical_potential:
                 # compute chemical potential
                 delta_1, delta_2 = \
                                 update_amps(T['t_1'], T['t_2'], self.n_tilde, np.zeros([self.M, self.M, self.M, self.M]), flag=True)
@@ -256,11 +256,8 @@ class two_body_model():
                 R_1 -= mu * delta_1
                 R_2 -= mu * delta_2
 
-            if chemical_potential:
-                T['t_0'] -= (E - mu * self.n_occ) * dtau
-            else:
-                T['t_0'] -= E * dtau
-
+                E -= mu * self.n_occ
+                
             # update CC amplitude
             T['t_2'] -= R_2 * dtau
             T['t_1'] -= R_1 * dtau
@@ -288,14 +285,18 @@ class two_body_model():
                 print("max 1-RDM:\n{:.3f}".format(abs(RDM_1).max()))
                 print("max 2-RDM:\n{:.3f}".format(abs(RDM_2).max()))
                 print("number of electron:{:.3f}".format(n_el))
-                print("chemical potential:{:} cm-1".format(mu))
+                if self.chemical_potential:
+                    print("chemical potential:{:} cm-1".format(mu))
                 print("occupation number:\n{:}".format(occ))
                 print("thermal internal energy:{:.3f}".format(E))
 
                 # store thermal internal energy
                 self.E_th.append(E)
                 # store chemical potential
-                self.mu_th.append(mu)
+                if self.chemical_potential:
+                    self.mu_th.append(mu)
+                else:
+                    self.mu_th.append(0)
                 # store total number of electrons
                 self.n_el_th.append(n_el)
                 # store partition function
