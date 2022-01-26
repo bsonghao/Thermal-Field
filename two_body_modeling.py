@@ -18,6 +18,7 @@ class two_body_model():
         H_core: core electron Hamiltonian
         Fock: fock matrix
         V_eri: 2-electron integral (chemist's notation)
+        n_occ: total number of electrons
         M: dimension of MO basis
         molecule: name of the molecule for testing
         E_NN: nuclear repulsion energy
@@ -244,6 +245,34 @@ class two_body_model():
 
         return RDM_1_sym, RDM_2_sym, T_1_sym, T_2_sym
 
+    def _correct_occupation_number(self, RDM_1):
+        """correct occupation number from 1-RDM"""
+        # diagonalize 1-RDM to get occupation number and natural orbitals
+        occupation_number, natural_orbital = np.linalg.eigh(RDM_1)
+        for index, N_occ in enumerate(occupation_number):
+            if N_occ > 1:
+                occupation_number[index] = 1
+            if N_occ < 0:
+                occupation_number[index] = 0
+
+        # correct total number of electron
+        tmp = occupation_number * (np.ones_like(occupation_number) - occupation_number)
+        X = sum(occupation_number)
+        Y = sum(tmp)
+        L_lambda = (self.n_occ - X) / Y
+        occupation_number_correct = occupation_number + L_lambda * tmp
+
+        # transfrom the corrected occupation number to the corrected 1-RDM through orbital rotation
+        RDM_1_correct = np.dot(natural_orbital, np.dot(np.diag(occupation_number_correct), natural_orbital.transpose()))
+
+        # reverse mapping the correct 1-RDM to T_1 amplitude
+        T_1_correct = np.zeros_like(RDM_1_correct)
+        T_1_correct += RDM_1_correct
+        T_1_correct -= np.einsum('p,q,pq->pq', self.sin_theta, self.sin_theta, np.eye(self.M))
+        T_1_correct /= np.einsum('q,p->pq', self.cos_theta, self.sin_theta)
+
+        return occupation_number_correct, RDM_1_correct, T_1_correct
+
     def TFCC_integration(self, T_final, N):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties"""
         # map initial T amplitude from reduced density matrix at zero beta
@@ -329,24 +358,25 @@ class two_body_model():
 
             # symmetrize density matrix and T amplitude
             RDM_1_sym, RDM_2_sym, T_1_sym, T_2_sym = self._symmetrize_density_matrix(RDM_1, RDM_2)
-            T['t_1'] = T_1_sym
             if self.T_2_flag:
                 T['t_2'] = T_2_sym
 
-            # compute occupation number
-            occ, nat = np.linalg.eigh(RDM_1_sym)
+            # correct the occupation number
+            occupation_number_correct, RDM_1_correct, T_1_correct = self._correct_occupation_number(RDM_1_sym)
+            T['t_1'] = T_1_correct
+
             # number of electron
-            n_el = sum(occ)
+            n_el = sum(occupation_number_correct)
 
             # print and store properties along the propagation
             if i != 0:
                 print("Temperature: {:.3f} K".format(1. / (self.kb * beta_tmp)))
-                print("max 1-RDM:\n{:.3f}".format(abs(RDM_1_sym).max()))
+                print("max 1-RDM:\n{:.3f}".format(abs(RDM_1_correct).max()))
                 print("max 2-RDM:\n{:.3f}".format(abs(RDM_2_sym).max()))
                 print("number of electron:{:.3f}".format(n_el))
                 if self.chemical_potential:
                     print("chemical potential:{:} cm-1".format(mu))
-                print("occupation number:\n{:}".format(occ))
+                print("occupation number:\n{:}".format(occupation_number_correct))
                 print("thermal internal energy:{:.3f}".format(E))
 
                 # store thermal internal energy
@@ -361,7 +391,7 @@ class two_body_model():
                 # store partition function
                 self.Z_th.append(np.exp(T['t_0']))
                 # store occupation number
-                self.occ.append(occ)
+                self.occ.append(occupation_number_correct)
 
                 # break
 
