@@ -416,7 +416,10 @@ class two_body_model():
             occ_dic[i] = occ_data
 
         df = pd.DataFrame(occ_dic)
-        df.to_csv("occupation_number_TFCC.csv", index=False)
+        if self.T_2_flag:
+            df.to_csv("occupation_number_TFCC_CCSD_sym.csv")
+        else:
+            df.to_csv("occupation_number_TFCC_CCS_sym.csv", index=False)
         return
 
     def Plot_thermal(self, compare=False):
