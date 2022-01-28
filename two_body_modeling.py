@@ -273,6 +273,54 @@ class two_body_model():
 
         return occupation_number_correct, RDM_1_correct, T_1_correct
 
+    def _check_P_Q_G_condition(self, RDM_1, T_2):
+        """exam N-representability condition P, Q, G"""
+        def calculate_two_body_cumulant(T_2):
+            """calculate diagonal two-body cumulant from T_2 amplitude"""
+            C_2 = np.einsum('p,q,p,q,pqpq->pq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
+            return C_2
+
+        def calculate_P_cumulant(RDM_1, C_2):
+            """calulate P cumulant from 1-RDM and 2-body cumulant"""
+            P_cumulant = C_2 + np.einsum('pp,qq->pq', RDM_1, RDM_1)
+            return P_cumulant
+
+        def calculate_Q_cumulant(RDM_1, C_2):
+            """calulate Q cumulant from 1-RDM and 2-body cumulant"""
+            one_sub_RDM_1 = np.eye(self.M) - RDM_1
+            Q_cumulant = C_2 + np.einsum('pp,qq->pq', one_sub_RDM_1, one_sub_RDM_1)
+            return Q_cumulant
+
+        def calculate_G_cumulant(RDM_1, C_2):
+            """calulate G cumulant from 1-RDM and 2-body cumulant"""
+            one_sub_RDM_1 = np.eye(self.M) - RDM_1
+            G_cumulant = -C_2 + np.einsum('pp,qq->pq', RDM_1, one_sub_RDM_1)
+            return G_cumulant
+
+        # calucate diagonal two body cumulant
+        C_2 = calculate_two_body_cumulant(T_2)
+
+        # calculate P cumulant
+        P_cumulant = calculate_P_cumulant(RDM_1, C_2)
+
+        # calculate Q cumulant
+        Q_cumulant = calculate_Q_cumulant(RDM_1, C_2)
+
+        # calculate G cumulant
+        G_cumulant = calculate_G_cumulant(RDM_1, C_2)
+
+        # exam P condition
+        # assert P_cumulant.min() > 0
+
+        # exam Q condition
+        # assert Q_cumulant.min() > 0
+
+        # exam G condition
+        # assert G_cumulant.min() > 0
+
+        return P_cumulant, Q_cumulant, G_cumulant
+
+
     def TFCC_integration(self, T_final, N):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties"""
         # map initial T amplitude from reduced density matrix at zero beta
@@ -311,6 +359,8 @@ class two_body_model():
         self.n_el_th = []
         self.mu_th = []
         self.occ = []
+        # initial P, Q, G plots
+        self.P_Q_G_condition = {"T(K)": self.T_grid, "P": [], "Q": [], "G": []}
 
         # imaginary propagation
         for i in range(N):
@@ -365,6 +415,8 @@ class two_body_model():
             occupation_number_correct, RDM_1_correct, T_1_correct = self._correct_occupation_number(RDM_1_sym)
             T['t_1'] = T_1_correct
 
+            # check N representability condition
+            P_cumulant, Q_cumulant, G_cumulant = self._check_P_Q_G_condition(RDM_1, T['t_2'])
             # number of electron
             n_el = sum(occupation_number_correct)
 
@@ -378,6 +430,10 @@ class two_body_model():
                     print("chemical potential:{:} cm-1".format(mu))
                 print("occupation number:\n{:}".format(occupation_number_correct))
                 print("thermal internal energy:{:.3f}".format(E))
+                print("*** N representability condition")
+                print("P condition:{:.5f}".format(P_cumulant.min()))
+                print("Q condition:{:.5f}".format(Q_cumulant.min()))
+                print("G condition:{:.5f}".format(G_cumulant.min()))
 
                 # store thermal internal energy
                 self.E_th.append(E)
@@ -393,9 +449,21 @@ class two_body_model():
                 # store occupation number
                 self.occ.append(occupation_number_correct)
 
+                # store data for P Q G condition
+                self.P_Q_G_condition['P'].append(P_cumulant.min())
+                self.P_Q_G_condition['Q'].append(Q_cumulant.min())
+                self.P_Q_G_condition['G'].append(G_cumulant.min())
                 # break
 
             beta_tmp += dtau
+
+        # store plot for P Q G condition
+        df = pd.DataFrame(self.P_Q_G_condition)
+        if self.T_2_flag:
+            df.to_csv("P_Q_G_condition_TFCC_CCSD_sym.csv", index=False)
+        else:
+            df.to_csv("P_Q_G_condition_TFCC_CCS_sym.csv", index=False)
+
 
         # store thermal property data
         thermal_prop = {"T": self.T_grid, "Z": self.Z_th, "mu": self.mu_th,
