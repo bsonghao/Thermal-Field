@@ -273,41 +273,41 @@ class two_body_model():
 
         return occupation_number_correct, RDM_1_correct, T_1_correct
 
+    def _calculate_two_body_cumulant(self, T_2):
+        """calculate diagonal two-body cumulant from T_2 amplitude"""
+        C_2 = np.einsum('p,q,p,q,pqpq->pq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
+        return C_2
+
+    def _calculate_P_cumulant(self, RDM_1, C_2):
+        """calulate P cumulant from 1-RDM and 2-body cumulant"""
+        P_cumulant = C_2 + np.einsum('pp,qq->pq', RDM_1, RDM_1)
+        return P_cumulant
+
+    def _calculate_Q_cumulant(self, RDM_1, C_2):
+        """calulate Q cumulant from 1-RDM and 2-body cumulant"""
+        one_sub_RDM_1 = np.eye(self.M) - RDM_1
+        Q_cumulant = C_2 + np.einsum('pp,qq->pq', one_sub_RDM_1, one_sub_RDM_1)
+        return Q_cumulant
+
+    def _calculate_G_cumulant(self, RDM_1, C_2):
+        """calulate G cumulant from 1-RDM and 2-body cumulant"""
+        one_sub_RDM_1 = np.eye(self.M) - RDM_1
+        G_cumulant = -C_2 + np.einsum('pp,qq->pq', RDM_1, one_sub_RDM_1)
+        return G_cumulant
+
     def _check_P_Q_G_condition(self, RDM_1, T_2):
         """exam N-representability condition P, Q, G"""
-        def calculate_two_body_cumulant(T_2):
-            """calculate diagonal two-body cumulant from T_2 amplitude"""
-            C_2 = np.einsum('p,q,p,q,pqpq->pq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
-            return C_2
-
-        def calculate_P_cumulant(RDM_1, C_2):
-            """calulate P cumulant from 1-RDM and 2-body cumulant"""
-            P_cumulant = C_2 + np.einsum('pp,qq->pq', RDM_1, RDM_1)
-            return P_cumulant
-
-        def calculate_Q_cumulant(RDM_1, C_2):
-            """calulate Q cumulant from 1-RDM and 2-body cumulant"""
-            one_sub_RDM_1 = np.eye(self.M) - RDM_1
-            Q_cumulant = C_2 + np.einsum('pp,qq->pq', one_sub_RDM_1, one_sub_RDM_1)
-            return Q_cumulant
-
-        def calculate_G_cumulant(RDM_1, C_2):
-            """calulate G cumulant from 1-RDM and 2-body cumulant"""
-            one_sub_RDM_1 = np.eye(self.M) - RDM_1
-            G_cumulant = -C_2 + np.einsum('pp,qq->pq', RDM_1, one_sub_RDM_1)
-            return G_cumulant
-
         # calucate diagonal two body cumulant
-        C_2 = calculate_two_body_cumulant(T_2)
+        C_2 = self._calculate_two_body_cumulant(T_2)
 
         # calculate P cumulant
-        P_cumulant = calculate_P_cumulant(RDM_1, C_2)
+        P_cumulant = self._calculate_P_cumulant(RDM_1, C_2)
 
         # calculate Q cumulant
-        Q_cumulant = calculate_Q_cumulant(RDM_1, C_2)
+        Q_cumulant = self._calculate_Q_cumulant(RDM_1, C_2)
 
         # calculate G cumulant
-        G_cumulant = calculate_G_cumulant(RDM_1, C_2)
+        G_cumulant = self._calculate_G_cumulant(RDM_1, C_2)
 
         # exam P condition
         # assert P_cumulant.min() > 0
@@ -319,6 +319,53 @@ class two_body_model():
         # assert G_cumulant.min() > 0
 
         return P_cumulant, Q_cumulant, G_cumulant
+
+    def _correct_two_body_density_matrix(self, RDM_1, T_2):
+        """implement correction to 2-RDM that satisfy N-representability condition"""
+        def cal_upper_bound(diag_1_RDM, diag_1_RDM_bar):
+            """calculate upper bound of two body cumulant"""
+            upper_bound = np.zeros([self.M, self.M])
+
+            for p, q in it.product(range(self.M), repeat=2):
+                upper_bound[p, q] = min(diag_1_RDM[p] * diag_1_RDM_bar[q], diag_1_RDM[q] * diag_1_RDM_bar[p])
+
+            return upper_bound
+
+        def cal_lower_bound(diag_1_RDM, diag_1_RDM_bar):
+            """calculate upper bound of two body cumulant"""
+            lower_bound = np.zeros([self.M, self.M])
+
+            for p, q in it.product(range(self.M), repeat=2):
+                lower_bound[p, q] = min(diag_1_RDM[p] * diag_1_RDM[q], diag_1_RDM_bar[p] * diag_1_RDM_bar[q])
+
+            return lower_bound
+
+        # evaluate n_p and 1 - n_p
+        diag_1_RDM = np.diag(RDM_1)
+        diag_1_RDM_bar = np.ones_like(diag_1_RDM) - diag_1_RDM
+
+        # evaluate two body cumulant
+        C_2 = self._calculate_two_body_cumulant(T_2)
+
+        # evaulate lower bound
+        lower_bound = cal_lower_bound(diag_1_RDM, diag_1_RDM_bar)
+
+        # evaluate upper bound
+        upper_bound = cal_upper_bound(diag_1_RDM, diag_1_RDM_bar)
+
+        # correct two body cumulant if it exceed the physical boundary
+        for p, q in it.product(range(self.M), repeat=2):
+            if C_2[p, q] > upper_bound[p, q]:
+                C_2[p, q] = upper_bound[p, q]
+            elif C_2[p, q] < lower_bound[p, q]:
+                C_2[p, q] = lower_bound[p, q]
+            else:
+                pass
+
+        # map matrix element of C_2 to T_2
+        T_2_correct = C_2 / np.einsum('p,p,q,q->pq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta)
+
+        return T_2_correct
 
 
     def TFCC_integration(self, T_final, N):
@@ -414,6 +461,11 @@ class two_body_model():
             # correct the occupation number
             occupation_number_correct, RDM_1_correct, T_1_correct = self._correct_occupation_number(RDM_1_sym)
             T['t_1'] = T_1_correct
+
+            # correct two body density matrix
+            T_2_correct = self._correct_two_body_density_matrix(RDM_1, T['t_2'])
+            for p, q in it.product(range(self.M), repeat=2):
+                T['t_2'][p, p, q, q] = T_2_correct[p, q]
 
             # check N representability condition
             P_cumulant, Q_cumulant, G_cumulant = self._check_P_Q_G_condition(RDM_1, T['t_2'])
