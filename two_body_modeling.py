@@ -445,7 +445,7 @@ class two_body_model():
 
         return T_2_exchange
 
-    def TFCC_integration(self, T_final, N):
+    def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties"""
         # map initial T amplitude from reduced density matrix at zero beta
         ## 1-RDM
@@ -539,15 +539,20 @@ class two_body_model():
             occupation_number_correct, RDM_1_correct, T_1_correct = self._correct_occupation_number(RDM_1_sym)
             T['t_1'] = T_1_correct
 
-            # correct direct two body density matrix
-            T_2_correct_direct = self._correct_two_body_density_matrix(RDM_1, T['t_2'])
-            for p, q in it.product(range(self.M), repeat=2):
-                T['t_2'][p, p, q, q] = T_2_correct_direct[p, q]
+            if direct_flag:
+                # correct direct two body density matrix
+                T_2_correct_direct = self._correct_two_body_density_matrix(RDM_1, T['t_2'])
+                for p, q in it.product(range(self.M), repeat=2):
+                    T['t_2'][p, p, q, q] = T_2_correct_direct[p, q]
 
-            # correct exchange two body density matrix
-            T_2_correct_exchange = self._correct_exchange_two_body_cumulant(RDM_1, T['t_2'])
-            for p, q in it.product(range(self.M), repeat=2):
-                T['t_2'][p, q, q, p] = T_2_correct_exchange[p, q]
+            if exchange_flag:
+                # correct exchange two body density matrix
+                T_2_correct_exchange = self._correct_exchange_two_body_cumulant(RDM_1, T['t_2'])
+                for p, q in it.product(range(self.M), repeat=2):
+                    if p != q:
+                        T['t_2'][p, q, q, p] = T_2_correct_exchange[p, q]
+                    else:
+                        pass
 
             # check N representability condition
             P_cumulant, Q_cumulant, G_cumulant = self._check_P_Q_G_condition(RDM_1, T['t_2'])
