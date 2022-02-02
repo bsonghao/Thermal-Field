@@ -275,7 +275,7 @@ class two_body_model():
 
     def _calculate_two_body_direct_cumulant(self, T_2):
         """calculate diagonal two-body cumulant from T_2 amplitude"""
-        C_2_direct = np.einsum('p,q,p,q,pqpq->pq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
+        C_2_direct = np.einsum('p,q,p,q,ppqq->pq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
         return C_2_direct
 
     def _calculate_two_body_exchange_cumulant(self, T_2):
@@ -341,7 +341,7 @@ class two_body_model():
             lower_bound = np.zeros([self.M, self.M])
 
             for p, q in it.product(range(self.M), repeat=2):
-                lower_bound[p, q] = min(diag_1_RDM[p] * diag_1_RDM[q], diag_1_RDM_bar[p] * diag_1_RDM_bar[q])
+                lower_bound[p, q] = -min(diag_1_RDM[p] * diag_1_RDM[q], diag_1_RDM_bar[p] * diag_1_RDM_bar[q])
 
             return lower_bound
 

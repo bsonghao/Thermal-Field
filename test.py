@@ -99,7 +99,7 @@ def main():
     # thermal field transform
     model.thermal_field_transform(T=1e8)
     # TFCC imaginary time integration
-    model.TFCC_integration(T_final=1.5e3, N=10000, direct_flag=True, exchange_flag=True)
+    model.TFCC_integration(T_final=1e3, N=30000, direct_flag=True, exchange_flag=False)
     # plot thermal properties
     model.Plot_thermal()
 
