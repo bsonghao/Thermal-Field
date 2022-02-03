@@ -273,6 +273,11 @@ class two_body_model():
 
         return occupation_number_correct, RDM_1_correct, T_1_correct
 
+    def _calculate_full_two_body_cumulant(self, T_2):
+        """calculation full (four index) two body cumulant"""
+        C_2 = np.einsum('p,q,r,s,prqs->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
+        return C_2
+
     def _calculate_two_body_direct_cumulant(self, T_2):
         """calculate diagonal two-body cumulant from T_2 amplitude"""
         C_2_direct = np.einsum('p,q,p,q,ppqq->pq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
@@ -445,6 +450,17 @@ class two_body_model():
 
         return T_2_exchange
 
+    def _exam_trace_condition(self, RDM_1, T_2):
+        """exam the trace condition of 2-RDM at low temperature"""
+        # calculate two body cumulant
+        C_2 = self._calculate_full_two_body_cumulant(T_2)
+        # evlulate trace condition
+        residue = 2 * np.einsum('prqq->pr', C_2)
+        residue -= np.einsum('pqqr->pr', C_2)
+        residue += RDM_1
+        residue -= np.dot(RDM_1, RDM_1)
+        return residue
+
     def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties"""
         # map initial T amplitude from reduced density matrix at zero beta
@@ -485,6 +501,9 @@ class two_body_model():
         self.occ = []
         # initial P, Q, G plots
         self.P_Q_G_condition = {"T(K)": self.T_grid, "P": [], "Q": [], "G": []}
+
+        # initial trace residue plot
+        self.trace_condition = {"T(K)": self.T_grid, "R": []}
 
         # imaginary propagation
         for i in range(N):
@@ -559,6 +578,9 @@ class two_body_model():
             # number of electron
             n_el = sum(occupation_number_correct)
 
+            # check trace condition
+            trace_residue = self._exam_trace_condition(RDM_1, T['t_2'])
+
             # print and store properties along the propagation
             if i != 0:
                 print("Temperature: {:.3f} K".format(1. / (self.kb * beta_tmp)))
@@ -573,6 +595,8 @@ class two_body_model():
                 print("P condition:{:.5f}".format(P_cumulant.min()))
                 print("Q condition:{:.5f}".format(Q_cumulant.min()))
                 print("G condition:{:.5f}".format(G_cumulant.min()))
+                print("Trace condition:")
+                print("trace of two body cumulant residue:{:.5f}".format(np.trace(trace_residue)))
 
                 # store thermal internal energy
                 self.E_th.append(E)
@@ -592,10 +616,18 @@ class two_body_model():
                 self.P_Q_G_condition['P'].append(P_cumulant.min())
                 self.P_Q_G_condition['Q'].append(Q_cumulant.min())
                 self.P_Q_G_condition['G'].append(G_cumulant.min())
+
+                # store data for trace residue
+                self.trace_condition['R'].append(np.trace(trace_residue))
                 # break
 
             beta_tmp += dtau
-
+        # store plot for trace condition
+        df = pd.DataFrame(self.trace_condition)
+        if self.T_2_flag:
+            df.to_csv("trace_condition_TFCC_CCSD_sym.csv", index=False)
+        else:
+            df.to_csv("trace_condition_TFCC_CCS_sym.csv", index=False)
         # store plot for P Q G condition
         df = pd.DataFrame(self.P_Q_G_condition)
         if self.T_2_flag:
