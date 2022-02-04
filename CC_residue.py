@@ -125,7 +125,9 @@ def cc_Wvoov(t1, t2, F_tilde, V_tilde):
     return Wakic
 
 def update_amps(t1, t2, F_tilde, V_tilde, cc2=False, flag=False):
-    """Singles and Doubles residue equation"""
+    """Singles and Doubles residue equation
+     flag: boolean to determine whether to evaluate terms that is associated with two electron integrals
+    """
     # Ref: Hirata et al., J. Chem. Phys. 120, 2581 (2004) Eqs.(35)-(36)
     # assert(isinstance(eris, ccsd._ChemistsERIs))
 

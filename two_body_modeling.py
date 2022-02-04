@@ -12,7 +12,7 @@ class two_body_model():
     """ Define a object that implement thermal field coupled_cluster
         method and thermal NOE method
         for GS and thermal property calculations for two-electron Hamiltonian """
-    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, molecule, E_NN, T_2_flag=True, chemical_potential=True):
+    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, molecule, E_NN, T_2_flag=True, chemical_potential=True, partial_trace_condition=True):
         """
         E_HF: energy expectation value (Hartree Fock GS energy)
         H_core: core electron Hamiltonian
@@ -24,6 +24,7 @@ class two_body_model():
         E_NN: nuclear repulsion energy
         T_2_flag: boolean to determine whether to update T_2 amplitude
         chemical_potential: boolean to determine whether to introduce chemical potential in the integration
+        partial_trace_condition: boolean to determine whether to introcude constraint on partial trace
         (all electron integrals are represented in MO basis)
         """
         print("***<start of input parameters>***")
@@ -36,6 +37,7 @@ class two_body_model():
 
         self.T_2_flag = T_2_flag
         self.chemical_potential = chemical_potential
+        self.partial_trace_condition = partial_trace_condition
         # construct Fock matrix (from 1e and 2e integral)
         self.F_ground_state = Fock
 
@@ -149,22 +151,24 @@ class two_body_model():
                         "ab": np.einsum('a,b,ab->ab', self.cos_theta, self.cos_theta, np.eye(self.M))}
 
         # 2-electron Hamiltonian (16 terms)
-        self.V_tilde = {"ijkl": np.einsum('i,j,k,l,ijkl->ijkl', sin_theta, sin_theta, sin_theta, sin_theta, self.V),
-                        "abcd": np.einsum('a,b,c,d,abcd->abcd', cos_theta, cos_theta, cos_theta, cos_theta, self.V),
-                        "ijab": np.einsum('i,j,a,b,ijab->ijab', sin_theta, sin_theta, cos_theta, cos_theta, self.V),
-                        "aibc": np.einsum('a,i,b,c,aibc->aibc', cos_theta, sin_theta, cos_theta, cos_theta, self.V),
-                        "ijka": np.einsum('i,j,k,a,ijka->ijka', sin_theta, sin_theta, sin_theta, cos_theta, self.V),
-                        "aijb": np.einsum('a,i,j,b,aijb->aijb', cos_theta, sin_theta, sin_theta, cos_theta, self.V),
-                        "abci": np.einsum('a,b,c,i,abci->abci', cos_theta, cos_theta, cos_theta, sin_theta, self.V),
-                        "iajk": np.einsum('i,a,j,k,iajk->iajk', sin_theta, cos_theta, sin_theta, sin_theta, self.V),
-                        "iabc": np.einsum('i,a,b,c,iabc->iabc', sin_theta, cos_theta, cos_theta, cos_theta, self.V),
-                        "ijak": np.einsum('i,j,a,k,ijak->ijak', sin_theta, sin_theta, cos_theta, sin_theta, self.V),
-                        "iabj": np.einsum('i,a,b,j,iabj->iabj', sin_theta, cos_theta, cos_theta, sin_theta, self.V),
-                        "abij": np.einsum('a,b,i,j,abij->abij', cos_theta, cos_theta, sin_theta, sin_theta, self.V),
-                        "abic": np.einsum('a,b,i,c,abic->abic', cos_theta, cos_theta, sin_theta, cos_theta, self.V),
-                        "aibj": np.einsum('a,i,b,j,aibj->aibj', cos_theta, sin_theta, cos_theta, sin_theta, self.V),
-                        "aijk": np.einsum('a,i,j,k,aijk->aijk', cos_theta, sin_theta, sin_theta, sin_theta, self.V),
-                        "iajb": np.einsum('i,a,j,b,iajb->iajb', sin_theta, cos_theta, sin_theta, cos_theta, self.V)}
+        self.V_tilde = {
+              "ijkl": np.einsum('i,j,k,l,ijkl->ijkl', sin_theta, sin_theta, sin_theta, sin_theta, self.V),
+              "abcd": np.einsum('a,b,c,d,abcd->abcd', cos_theta, cos_theta, cos_theta, cos_theta, self.V),
+              "ijab": np.einsum('i,j,a,b,ijab->ijab', sin_theta, sin_theta, cos_theta, cos_theta, self.V),
+              "aibc": np.einsum('a,i,b,c,aibc->aibc', cos_theta, sin_theta, cos_theta, cos_theta, self.V),
+              "ijka": np.einsum('i,j,k,a,ijka->ijka', sin_theta, sin_theta, sin_theta, cos_theta, self.V),
+              "aijb": np.einsum('a,i,j,b,aijb->aijb', cos_theta, sin_theta, sin_theta, cos_theta, self.V),
+              "abci": np.einsum('a,b,c,i,abci->abci', cos_theta, cos_theta, cos_theta, sin_theta, self.V),
+              "iajk": np.einsum('i,a,j,k,iajk->iajk', sin_theta, cos_theta, sin_theta, sin_theta, self.V),
+              "iabc": np.einsum('i,a,b,c,iabc->iabc', sin_theta, cos_theta, cos_theta, cos_theta, self.V),
+              "ijak": np.einsum('i,j,a,k,ijak->ijak', sin_theta, sin_theta, cos_theta, sin_theta, self.V),
+              "iabj": np.einsum('i,a,b,j,iabj->iabj', sin_theta, cos_theta, cos_theta, sin_theta, self.V),
+              "abij": np.einsum('a,b,i,j,abij->abij', cos_theta, cos_theta, sin_theta, sin_theta, self.V),
+              "abic": np.einsum('a,b,i,c,abic->abic', cos_theta, cos_theta, sin_theta, cos_theta, self.V),
+              "aibj": np.einsum('a,i,b,j,aibj->aibj', cos_theta, sin_theta, cos_theta, sin_theta, self.V),
+              "aijk": np.einsum('a,i,j,k,aijk->aijk', cos_theta, sin_theta, sin_theta, sin_theta, self.V),
+              "iajb": np.einsum('i,a,j,b,iajb->iajb', sin_theta, cos_theta, sin_theta, cos_theta, self.V)
+              }
 
         print("2-electron Hamiltonian in quasi-particle representation")
         print("V_tilde_ijkl:\n{:}".format(self.V_tilde['ijkl'].shape))
@@ -183,6 +187,29 @@ class two_body_model():
         print("V_tilde_aibj:\n{:}".format(self.V_tilde['aibj'].shape))
         print("V_tilde_aijk:\n{:}".format(self.V_tilde['aijk'].shape))
         print("V_tilde_iajb:\n{:}".format(self.V_tilde['iajb'].shape))
+
+        # Bogoliubov transform the two body density matrix at zero beta
+        # 2-electron density matrix at zero beta (16 terms)
+        two_body_DM = 0.5 * np.einsum('pr,qs->pqrs', np.eye(self.M), np.eye(self.M))
+
+        self.O_tilde = {
+              "ijkl": np.einsum('i,j,k,l,ijkl->ijkl', sin_theta, sin_theta, sin_theta, sin_theta, two_body_DM),
+              "abcd": np.einsum('a,b,c,d,abcd->abcd', cos_theta, cos_theta, cos_theta, cos_theta, two_body_DM),
+              "ijab": np.einsum('i,j,a,b,ijab->ijab', sin_theta, sin_theta, cos_theta, cos_theta, two_body_DM),
+              "aibc": np.einsum('a,i,b,c,aibc->aibc', cos_theta, sin_theta, cos_theta, cos_theta, two_body_DM),
+              "ijka": np.einsum('i,j,k,a,ijka->ijka', sin_theta, sin_theta, sin_theta, cos_theta, two_body_DM),
+              "aijb": np.einsum('a,i,j,b,aijb->aijb', cos_theta, sin_theta, sin_theta, cos_theta, two_body_DM),
+              "abci": np.einsum('a,b,c,i,abci->abci', cos_theta, cos_theta, cos_theta, sin_theta, two_body_DM),
+              "iajk": np.einsum('i,a,j,k,iajk->iajk', sin_theta, cos_theta, sin_theta, sin_theta, two_body_DM),
+              "iabc": np.einsum('i,a,b,c,iabc->iabc', sin_theta, cos_theta, cos_theta, cos_theta, two_body_DM),
+              "ijak": np.einsum('i,j,a,k,ijak->ijak', sin_theta, sin_theta, cos_theta, sin_theta, two_body_DM),
+              "iabj": np.einsum('i,a,b,j,iabj->iabj', sin_theta, cos_theta, cos_theta, sin_theta, two_body_DM),
+              "abij": np.einsum('a,b,i,j,abij->abij', cos_theta, cos_theta, sin_theta, sin_theta, two_body_DM),
+              "abic": np.einsum('a,b,i,c,abic->abic', cos_theta, cos_theta, sin_theta, cos_theta, two_body_DM),
+              "aibj": np.einsum('a,i,b,j,aibj->aibj', cos_theta, sin_theta, cos_theta, sin_theta, two_body_DM),
+              "aijk": np.einsum('a,i,j,k,aijk->aijk', cos_theta, sin_theta, sin_theta, sin_theta, two_body_DM),
+              "iajb": np.einsum('i,a,j,b,iajb->iajb', sin_theta, cos_theta, sin_theta, cos_theta, two_body_DM)
+              }
 
         # construct Fock matrix from 1-electron and 2-electron integrals
         self.F_tilde, self.F_physical = self._construct_fock_matrix_from_physical_Hamiltonian(RDM_1)
@@ -275,7 +302,7 @@ class two_body_model():
 
     def _calculate_full_two_body_cumulant(self, T_2):
         """calculation full (four index) two body cumulant"""
-        C_2 = np.einsum('p,q,r,s,prqs->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
+        C_2 = np.einsum('p,q,r,s,psqr->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
         return C_2
 
     def _calculate_two_body_direct_cumulant(self, T_2):
@@ -450,16 +477,41 @@ class two_body_model():
 
         return T_2_exchange
 
-    def _exam_trace_condition(self, RDM_1, T_2):
-        """exam the trace condition of 2-RDM at low temperature"""
+    def _calculate_chemical_potential(self, R_1, T):
+        """calculate chemical potential to fix total number of electrons"""
+        delta_1, delta_2 = \
+                        update_amps(T['t_1'], T['t_2'], self.n_tilde, np.zeros([self.M, self.M, self.M, self.M]), flag=True)
+        chemical_potential = np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, R_1)
+        chemical_potential /= np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, delta_1)
+
+        return chemical_potential, delta_1, delta_2
+
+    def _calculate_partial_trace_residue(self, RDM_1, T_2):
+        """calculate partial trace residue of 2-RDM"""
         # calculate two body cumulant
         C_2 = self._calculate_full_two_body_cumulant(T_2)
         # evlulate trace condition
-        residue = 2 * np.einsum('prqq->pr', C_2)
+        residue = 2 * np.einsum('pqrq->pr', C_2)
         residue -= np.einsum('pqqr->pr', C_2)
         residue += RDM_1
         residue -= np.dot(RDM_1, RDM_1)
         return residue
+
+    def _constraint_partial_trace(self, R_2, T):
+        """add constraint for partial trace residue once it hits the physical boundary"""
+        zero_one_int = {
+           "ij": np.zeros([self.M, self.M]),
+           "ab": np.zeros([self.M, self.M]),
+           "ia": np.zeros([self.M, self.M]),
+           "ai": np.zeros([self.M, self.M]),
+        }
+        delta_1, delta_2 = \
+                        update_amps(T['t_1'], T['t_2'], zero_one_int, self.O_tilde, flag=False)
+
+        langrange_multiplier = np.einsum('p,p,p,p,pppp->', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, R_2)
+        langrange_multiplier /= np.einsum('p,p,p,p,pppp->', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, delta_2)
+
+        return langrange_multiplier, delta_1, delta_2
 
     def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties"""
@@ -519,17 +571,21 @@ class two_body_model():
             E += self.E_NN
 
             if self.chemical_potential:
-                # compute chemical potential
-                delta_1, delta_2 = \
-                                update_amps(T['t_1'], T['t_2'], self.n_tilde, np.zeros([self.M, self.M, self.M, self.M]), flag=True)
-                mu = np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, R_1)
-                mu /= np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, delta_1)
+                if beta_tmp < 1. / (self.kb * 5e4):
+                    # compute chemical potential
+                    mu, delta_1, delta_2 = self._calculate_chemical_potential(R_1, T)
+                    # apply chemical potential to CC residue
+                    R_1 -= mu * delta_1
+                    R_2 -= mu * delta_2
 
-                # apply chemical potential to CC residue
-                R_1 -= mu * delta_1
-                R_2 -= mu * delta_2
-
-                E -= mu * self.n_occ
+                    # E -= mu * self.n_occ
+            if self.partial_trace_condition:
+                if beta_tmp < 1. / (self.kb * 5e4):
+                    # correct partial trace residue once it hits the physical boundary
+                    trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
+                    langrange_multiplier, delta_1, delta_2 = self._constraint_partial_trace(R_2, T)
+                    R_1 -= langrange_multiplier * delta_1
+                    R_2 -= langrange_multiplier * delta_2
 
             # update CC amplitude
             if self.T_2_flag:
@@ -577,9 +633,8 @@ class two_body_model():
             P_cumulant, Q_cumulant, G_cumulant = self._check_P_Q_G_condition(RDM_1, T['t_2'])
             # number of electron
             n_el = sum(occupation_number_correct)
-
             # check trace condition
-            trace_residue = self._exam_trace_condition(RDM_1, T['t_2'])
+            trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
 
             # print and store properties along the propagation
             if i != 0:
@@ -589,6 +644,8 @@ class two_body_model():
                 print("number of electron:{:.3f}".format(n_el))
                 if self.chemical_potential:
                     print("chemical potential:{:} cm-1".format(mu))
+                if self.partial_trace_condition:
+                    print("langrange multilpier for partial trace constraint:{:} cm-1".format(langrange_multiplier))
                 print("occupation number:\n{:}".format(occupation_number_correct))
                 print("thermal internal energy:{:.3f}".format(E))
                 print("*** N representability condition")
@@ -596,6 +653,7 @@ class two_body_model():
                 print("Q condition:{:.5f}".format(Q_cumulant.min()))
                 print("G condition:{:.5f}".format(G_cumulant.min()))
                 print("Trace condition:")
+                print("trace of two body density matrix:{:.5f}".format(np.einsum('pppp->', RDM_2)))
                 print("trace of two body cumulant residue:{:.5f}".format(np.trace(trace_residue)))
 
                 # store thermal internal energy
