@@ -48,6 +48,8 @@ def extract_Hamiltonian_parameters(one_body_hamitonian, V_couple, V_ontop, nelec
     mean_field._eri = ao2mo.restore(8, eri, basis_size)
     mean_field.kernel()
 
+
+    print("one electron Hamiltonian:\n{:}".format(one_body_hamitonian))
     # get converged Fock matrix from HF calculation
     fock = mean_field.get_fock()
     print("Fock matrix:\n{:}".format(fock.shape))
