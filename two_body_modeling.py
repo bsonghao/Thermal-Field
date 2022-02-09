@@ -63,7 +63,9 @@ class two_body_model():
         print("Two-electron integrals:\n{:}".format(self.V.shape))
 
         # Boltzmann constant(Hartree T-1)
-        self.kb = 3.1668152e-06
+        # self.kb = 3.1668152e-06
+        # Boltzmann constant(cm-1 T-1)
+        self.kb = 0.69503476
 
         print("Boltzmann constant(Hartree T-1):{:.9f}".format(self.kb))
         print("number of electrons: {:}".format(self.n_occ))
@@ -550,6 +552,7 @@ class two_body_model():
         self.Z_th = []
         self.n_el_th = []
         self.mu_th = []
+        self.lambda_th = []
         self.occ = []
         # initial P, Q, G plots
         self.P_Q_G_condition = {"T(K)": self.T_grid, "P": [], "Q": [], "G": []}
@@ -571,21 +574,21 @@ class two_body_model():
             E += self.E_NN
 
             if self.chemical_potential:
-                if beta_tmp < 1. / (self.kb * 5e4):
-                    # compute chemical potential
-                    mu, delta_1, delta_2 = self._calculate_chemical_potential(R_1, T)
-                    # apply chemical potential to CC residue
-                    R_1 -= mu * delta_1
-                    R_2 -= mu * delta_2
+                # if beta_tmp < 1. / (self.kb * 5e4):
+                # compute chemical potential
+                mu, delta_1, delta_2 = self._calculate_chemical_potential(R_1, T)
+                # apply chemical potential to CC residue
+                R_1 -= mu * delta_1
+                R_2 -= mu * delta_2
 
                     # E -= mu * self.n_occ
             if self.partial_trace_condition:
-                if beta_tmp < 1. / (self.kb * 5e4):
-                    # correct partial trace residue once it hits the physical boundary
-                    trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
-                    langrange_multiplier, delta_1, delta_2 = self._constraint_partial_trace(R_2, T)
-                    R_1 -= langrange_multiplier * delta_1
-                    R_2 -= langrange_multiplier * delta_2
+                # if beta_tmp < 1. / (self.kb * 5e4):
+                # correct partial trace residue once it hits the physical boundary
+                trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
+                langrange_multiplier, delta_1, delta_2 = self._constraint_partial_trace(R_2, T)
+                R_1 -= langrange_multiplier * delta_1
+                R_2 -= langrange_multiplier * delta_2
 
             # update CC amplitude
             if self.T_2_flag:
@@ -663,6 +666,11 @@ class two_body_model():
                     self.mu_th.append(mu)
                 else:
                     self.mu_th.append(0)
+
+                if self.partial_trace_condition:
+                    self.lambda_th.append(langrange_multiplier)
+                else:
+                    self.lambda_th.append(0)
                 # store total number of electrons
                 self.n_el_th.append(n_el)
                 # store partition function
@@ -696,7 +704,7 @@ class two_body_model():
 
         # store thermal property data
         thermal_prop = {"T": self.T_grid, "Z": self.Z_th, "mu": self.mu_th,
-                        "U": self.E_th, "n_el": self.n_el_th}
+                        "U": self.E_th, "n_el": self.n_el_th, "lambda": self.lambda_th}
 
         df = pd.DataFrame(thermal_prop)
         if self.T_2_flag:
