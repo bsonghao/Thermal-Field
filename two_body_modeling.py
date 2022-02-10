@@ -520,9 +520,15 @@ class two_body_model():
         heat_capacity = -self.kb * tau**2 * energy_derivative(t1, t2, R_1, R_2, self.F_tilde, self.V_tilde)
         return heat_capacity
 
+    def _cal_free_energy(self, Z, tau):
+        """calculation free energy"""
+        A = - Z / tau
+        return A
     def _calculate_chemical_entropy(self, Z, E, mu, tau):
         """calculate chemical entropy"""
-        chemical_entropy = (E - mu * self.n_occ) * tau * self.kb + Z * self.kb + mu * self.n_occ
+        # calculation free energy
+        A = self._cal_free_energy(Z, tau)
+        chemical_entropy = (E - A) * tau * self.kb
         return chemical_entropy
 
     def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True):
