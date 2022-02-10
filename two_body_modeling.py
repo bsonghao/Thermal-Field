@@ -522,7 +522,7 @@ class two_body_model():
 
     def _calculate_chemical_entropy(self, Z, E, mu, tau):
         """calculate chemical entropy"""
-        chemical_entropy = (E - mu * self.n_occ) * tau * self.kb + Z * self.kb
+        chemical_entropy = (E - mu * self.n_occ) * tau * self.kb + Z * self.kb + mu * self.n_occ
         return chemical_entropy
 
     def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True):
@@ -543,7 +543,8 @@ class two_body_model():
 
         # map initial constant amplitude (at zero beta)
         f = self.f
-        t_0 = self.M * np.log(1 + f / (1 - f))
+        # t_0 = self.M * np.log(1 + f / (1 - f))
+        t_0 = 2 * self.M * np.log(2)
 
         # store T amplitude in a dictionary
         T = {"t_2": t_2, "t_1": t_1, "t_0": t_0}
@@ -585,6 +586,9 @@ class two_body_model():
             # apply nuclear repulsion energy to energy equation
             E += self.E_NN
 
+            # shift ground state energy
+            E -= self.E_HF
+
             if self.chemical_potential:
                 # if beta_tmp < 1. / (self.kb * 5e4):
                 # compute chemical potential
@@ -593,7 +597,7 @@ class two_body_model():
                 R_1 -= mu * delta_1
                 R_2 -= mu * delta_2
 
-                    # E -= mu * self.n_occ
+                # E -= mu * self.n_occ
             if self.partial_trace_condition:
                 # if beta_tmp < 1. / (self.kb * 5e4):
                 # correct partial trace residue once it hits the physical boundary
@@ -607,7 +611,7 @@ class two_body_model():
                 T['t_2'] -= R_2 * dtau
 
             T['t_1'] -= R_1 * dtau
-            T['t_0'] -= (E - mu * self.n_occ) * dtau
+            T['t_0'] -= E * dtau
             # (E - mu * self.n_occ) * dtau
 
             # compute RDM
@@ -676,7 +680,7 @@ class two_body_model():
                 print("Q condition:{:.5f}".format(Q_cumulant.min()))
                 print("G condition:{:.5f}".format(G_cumulant.min()))
                 print("Trace condition:")
-                print("trace of two body density matrix:{:.5f}".format(np.einsum('pppp->', RDM_2)))
+                print("trace of two body density matrix:{:.5f}".format(np.einsum('pppp->', RDM_2_sym)))
                 print("trace of two body cumulant residue:{:.5f}".format(np.trace(trace_residue)))
                 print("heat capacity: {:.5f} cm-1 K-1".format(heat_capacity))
                 print("chemical entropy: {:.5f} cm-1 K-1".format(chemical_entropy))
@@ -697,7 +701,7 @@ class two_body_model():
                 # store total number of electrons
                 self.n_el_th.append(n_el)
                 # store partition function
-                self.Z_th.append(np.exp(T['t_0']))
+                self.Z_th.append(T['t_0'])
                 # store occupation number
                 self.occ.append(occupation_number_correct)
                 # store heat capacity
@@ -711,7 +715,7 @@ class two_body_model():
                 self.P_Q_G_condition['G'].append(G_cumulant.min())
 
                 # store data for trace residue
-                self.trace_condition['R'].append(np.trace(trace_residue))
+                self.trace_condition['R'].append(np.einsum('pppp->', RDM_2_sym))
                 # break
 
             beta_tmp += dtau
