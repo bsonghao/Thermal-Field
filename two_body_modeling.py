@@ -520,9 +520,9 @@ class two_body_model():
         heat_capacity = -self.kb * tau**2 * energy_derivative(t1, t2, R_1, R_2, self.F_tilde, self.V_tilde)
         return heat_capacity
 
-    def _calculate_chemical_entropy(self, Z, E, tau):
+    def _calculate_chemical_entropy(self, Z, E, mu, tau):
         """calculate chemical entropy"""
-        chemical_entropy = (E + 1. / tau * np.log(Z)) / tau / self.kb
+        chemical_entropy = (E - mu * self.n_occ) * tau * self.kb + Z * self.kb
         return chemical_entropy
 
     def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True):
@@ -607,7 +607,7 @@ class two_body_model():
                 T['t_2'] -= R_2 * dtau
 
             T['t_1'] -= R_1 * dtau
-            T['t_0'] -= E * dtau
+            T['t_0'] -= (E - mu * self.n_occ) * dtau
             # (E - mu * self.n_occ) * dtau
 
             # compute RDM
@@ -656,7 +656,7 @@ class two_body_model():
 
             # calaulate chemical entropy
             if i != 0:
-                chemical_entropy = self._calculate_chemical_entropy(np.exp(T['t_0']), E, beta_tmp)
+                chemical_entropy = self._calculate_chemical_entropy(T['t_0'], E, mu, beta_tmp)
 
 
             # print and store properties along the propagation
@@ -680,6 +680,7 @@ class two_body_model():
                 print("trace of two body cumulant residue:{:.5f}".format(np.trace(trace_residue)))
                 print("heat capacity: {:.5f} cm-1 K-1".format(heat_capacity))
                 print("chemical entropy: {:.5f} cm-1 K-1".format(chemical_entropy))
+                print("partition_function: {:.5f} cm-1 K-1".format(T['t_0']))
 
                 # store thermal internal energy
                 self.E_th.append(E)
