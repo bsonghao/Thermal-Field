@@ -247,3 +247,24 @@ def energy(t1, t2, F_tilde, V_tilde):
     if abs(e.imag) > 1e-4:
         logger.warn(cc, 'Non-zero imaginary part found in RCCSD energy %s', e)
     return e.real
+
+
+def energy_derivative(t1, t2, R_1, R_2, F_tilde, V_tilde):
+    """calculate derivate of energy over beta"""
+    def cal_d_c_2(t_1, R_1, R_2):
+        """evaluate derivative of cumulant"""
+        d_c_2 = -np.einsum('ia,jb->ijab', R_1, t_1)
+        d_c_2 -= np.einsum('ia,jb->ijab', t_1, R_1)
+        d_c_2 -= R_2
+        return d_c_2
+
+    d_e = -2 * np.einsum('ia,ia', F_tilde['ia'], R_1)
+
+    d_c_2 = cal_d_c_2(t1, R_1, R_2)
+    
+    eris_ovov = V_tilde['iajb']
+
+    d_e += 2 * np.einsum('ijab,iajb', d_c_2, eris_ovov)
+    d_e -= np.einsum('ijab,ibja', d_c_2, eris_ovov)
+
+    return d_e

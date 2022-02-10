@@ -515,6 +515,16 @@ class two_body_model():
 
         return langrange_multiplier, delta_1, delta_2
 
+    def _calculate_heat_capacity(self, t1, t2, R_1, R_2, tau):
+        """calculate heat capacity"""
+        heat_capacity = -self.kb * tau**2 * energy_derivative(t1, t2, R_1, R_2, self.F_tilde, self.V_tilde)
+        return heat_capacity
+
+    def _calculate_chemical_entropy(self, Z, E, tau):
+        """calculate chemical entropy"""
+        chemical_entropy = (E + 1. / tau * np.log(Z)) / tau / self.kb
+        return chemical_entropy
+
     def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties"""
         # map initial T amplitude from reduced density matrix at zero beta
@@ -554,6 +564,8 @@ class two_body_model():
         self.mu_th = []
         self.lambda_th = []
         self.occ = []
+        self.c_v = []
+        self.S = []
         # initial P, Q, G plots
         self.P_Q_G_condition = {"T(K)": self.T_grid, "P": [], "Q": [], "G": []}
 
@@ -639,6 +651,14 @@ class two_body_model():
             # check trace condition
             trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
 
+            # calculate heat capacity
+            heat_capacity = self._calculate_heat_capacity(T['t_1'], T['t_2'], R_1, R_2, beta_tmp)
+
+            # calaulate chemical entropy
+            if i != 0:
+                chemical_entropy = self._calculate_chemical_entropy(np.exp(T['t_0']), E, beta_tmp)
+
+
             # print and store properties along the propagation
             if i != 0:
                 print("Temperature: {:.3f} K".format(1. / (self.kb * beta_tmp)))
@@ -658,6 +678,8 @@ class two_body_model():
                 print("Trace condition:")
                 print("trace of two body density matrix:{:.5f}".format(np.einsum('pppp->', RDM_2)))
                 print("trace of two body cumulant residue:{:.5f}".format(np.trace(trace_residue)))
+                print("heat capacity: {:.5f} cm-1 K-1".format(heat_capacity))
+                print("chemical entropy: {:.5f} cm-1 K-1".format(chemical_entropy))
 
                 # store thermal internal energy
                 self.E_th.append(E)
@@ -677,6 +699,10 @@ class two_body_model():
                 self.Z_th.append(np.exp(T['t_0']))
                 # store occupation number
                 self.occ.append(occupation_number_correct)
+                # store heat capacity
+                self.c_v.append(heat_capacity)
+                # store chemical entropy
+                self.S.append(chemical_entropy)
 
                 # store data for P Q G condition
                 self.P_Q_G_condition['P'].append(P_cumulant.min())
@@ -704,7 +730,7 @@ class two_body_model():
 
         # store thermal property data
         thermal_prop = {"T": self.T_grid, "Z": self.Z_th, "mu": self.mu_th,
-                        "U": self.E_th, "n_el": self.n_el_th, "lambda": self.lambda_th}
+                        "U": self.E_th, "n_el": self.n_el_th, "lambda": self.lambda_th, "c_v": self.c_v, "S": self.S}
 
         df = pd.DataFrame(thermal_prop)
         if self.T_2_flag:
