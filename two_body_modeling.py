@@ -745,7 +745,11 @@ class two_body_model():
 
         df = pd.DataFrame(thermal_prop)
         if self.T_2_flag:
-            df.to_csv("thermal_properties_TFCC_CCSD_sym.csv", index=False)
+            if self.partial_trace_condition:
+                df.to_csv("thermal_properties_TFCC_CCSD_modified_model_canonical.csv", index=False)
+            else:
+                df.to_csv("thermal_properties_TFCC_CCSD_grand_modified_model_canonical.csv", index=False)
+
         else:
             df.to_csv("thermal_properties_TFCC_CCS_sym.csv", index=False)
 
@@ -759,7 +763,11 @@ class two_body_model():
 
         df = pd.DataFrame(occ_dic)
         if self.T_2_flag:
-            df.to_csv("occupation_number_TFCC_CCSD_sym.csv")
+            if self.partial_trace_condition:
+                df.to_csv("occupation_number_TFCC_CCSD_modified_model_canonical.csv", index=False)
+            else:
+                df.to_csv("occupation_number_TFCC_CCSD_modified_model_grand_canonical.csv", index=False)
+
         else:
             df.to_csv("occupation_number_TFCC_CCS_sym.csv", index=False)
         return
