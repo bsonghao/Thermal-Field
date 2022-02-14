@@ -288,7 +288,11 @@ class two_body_model():
         tmp = occupation_number * (np.ones_like(occupation_number) - occupation_number)
         X = sum(occupation_number)
         Y = sum(tmp)
-        L_lambda = (self.n_occ - X) / Y
+        if Y != 0:
+            L_lambda = (self.n_occ - X) / Y
+        else:
+            L_lambda = 0
+
         occupation_number_correct = occupation_number + L_lambda * tmp
 
         # transfrom the corrected occupation number to the corrected 1-RDM through orbital rotation
@@ -524,7 +528,7 @@ class two_body_model():
         """calculation free energy"""
         A = - Z / tau
         return A
-    def _calculate_chemical_entropy(self, Z, E, mu, tau):
+    def _calculate_chemical_entropy(self, Z, E, tau):
         """calculate chemical entropy"""
         # calculation free energy
         A = self._cal_free_energy(Z, tau)
@@ -605,12 +609,14 @@ class two_body_model():
 
                 # E -= mu * self.n_occ
             if self.partial_trace_condition:
-                # if beta_tmp < 1. / (self.kb * 5e4):
-                # correct partial trace residue once it hits the physical boundary
-                trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
-                langrange_multiplier, delta_1, delta_2 = self._constraint_partial_trace(R_2, T)
-                R_1 -= langrange_multiplier * delta_1
-                R_2 -= langrange_multiplier * delta_2
+                if beta_tmp < 1. / (self.kb * 5e1):
+                    # correct partial trace residue once it hits the physical boundary
+                    trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
+                    langrange_multiplier, delta_1, delta_2 = self._constraint_partial_trace(R_2, T)
+                    R_1 -= langrange_multiplier * delta_1
+                    R_2 -= langrange_multiplier * delta_2
+
+                    # E -= langrange_multiplier * self.n_occ
 
             # update CC amplitude
             if self.T_2_flag:
@@ -666,7 +672,7 @@ class two_body_model():
 
             # calaulate chemical entropy
             if i != 0:
-                chemical_entropy = self._calculate_chemical_entropy(T['t_0'], E, mu, beta_tmp)
+                chemical_entropy = self._calculate_chemical_entropy(T['t_0'], E, beta_tmp)
 
 
             # print and store properties along the propagation
@@ -748,7 +754,7 @@ class two_body_model():
             if self.partial_trace_condition:
                 df.to_csv("thermal_properties_TFCC_CCSD_modified_model_canonical.csv", index=False)
             else:
-                df.to_csv("thermal_properties_TFCC_CCSD_grand_modified_model_canonical.csv", index=False)
+                df.to_csv("thermal_properties_TFCC_CCSD_modified_model_grand_canonical.csv", index=False)
 
         else:
             df.to_csv("thermal_properties_TFCC_CCS_sym.csv", index=False)

@@ -73,7 +73,7 @@ def extract_Hamiltonian_parameters(one_body_hamitonian, V_couple, V_ontop, nelec
     mean_field._eri = ao2mo.restore(8, eri_modified, basis_size)
     mean_field.kernel()
 
-    print("one electron Hamiltonian:\n{:}".format(one_body_hamitonian))
+    print("one electron Hamiltonian:\n{:}".format(h_core))
     # get converged Fock matrix from HF calculation
     fock = mean_field.get_fock()
     print("Fock matrix:\n{:}".format(fock.shape))
@@ -86,7 +86,7 @@ def extract_Hamiltonian_parameters(one_body_hamitonian, V_couple, V_ontop, nelec
     NR_energy = mean_field.energy_nuc()
     print("nuclear repulsion energy (in cm-1):{:.5f}".format(NR_energy))
 
-    return h_core, fock, eri, S, E_Hartree_Fock, NR_energy
+    return h_core, fock, eri_modified, S, E_Hartree_Fock, NR_energy
 
 
 def main():
@@ -104,21 +104,16 @@ def main():
     h_core, fock_matrix, eri_integral, S_matrix, E_HF, E_NR = extract_Hamiltonian_parameters(one_body_hamiltonian, V_couple, V_ontop, nelectron, modified_parameter)
 
     # total number of electron
-    nof_electron =  nelectron / 2
+    nof_electron = nelectron / 2
     print("total number of electrons:{:}".format(nof_electron))
-
-
-
-
-
 
     # run TFCC & thermal NOE calculation
     model = two_body_model(E_HF, h_core, fock_matrix, eri_integral, nof_electron, molecule=molecule,
-                           E_NN=E_NR, T_2_flag=True, chemical_potential=True, partial_trace_condition=True)
+                           E_NN=E_NR, T_2_flag=True, chemical_potential=True, partial_trace_condition=False)
     # thermal field transform
     model.thermal_field_transform(T=1e8)
     # TFCC imaginary time integration
-    model.TFCC_integration(T_final=1e0, N=10000, direct_flag=True, exchange_flag=True)
+    model.TFCC_integration(T_final=2e0, N=10000, direct_flag=True, exchange_flag=True)
     # plot thermal properties
     model.Plot_thermal()
 
