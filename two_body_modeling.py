@@ -524,7 +524,7 @@ class two_body_model():
         """calculation free energy"""
         A = - Z / tau
         return A
-    def _calculate_chemical_entropy(self, Z, E, mu, tau):
+    def _calculate_chemical_entropy(self, Z, E, tau):
         """calculate chemical entropy"""
         # calculation free energy
         A = self._cal_free_energy(Z, tau)
@@ -666,7 +666,7 @@ class two_body_model():
 
             # calaulate chemical entropy
             if i != 0:
-                chemical_entropy = self._calculate_chemical_entropy(T['t_0'], E, mu, beta_tmp)
+                chemical_entropy = self._calculate_chemical_entropy(T['t_0'], E, beta_tmp)
 
 
             # print and store properties along the propagation
