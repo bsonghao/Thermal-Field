@@ -15,8 +15,8 @@ class two_body_model():
     def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, molecule, E_NN, T_2_flag=True, chemical_potential=True, partial_trace_condition=True):
         """
         E_HF: energy expectation value (Hartree Fock GS energy)
+        Fock: ground_state_Fock_matrix
         H_core: core electron Hamiltonian
-        Fock: fock matrix
         V_eri: 2-electron integral (chemist's notation)
         n_occ: total number of electrons
         M: dimension of MO basis
@@ -34,12 +34,12 @@ class two_body_model():
         self.molecule = molecule
         # core electron Hamiltonian
         self.H_core = H_core
+        # construct Fock matrix (from 1e and 2e integral)
+        self.F_ground_state = Fock
 
         self.T_2_flag = T_2_flag
         self.chemical_potential = chemical_potential
         self.partial_trace_condition = partial_trace_condition
-        # construct Fock matrix (from 1e and 2e integral)
-        self.F_ground_state = Fock
 
         # nuclear repulsion energy
         self.E_NN = E_NN
@@ -56,9 +56,9 @@ class two_body_model():
         self.one_fourth = 1. / 4.
         # initialize Hamiltonian
         # constant part of the full Hamiltonian (H_0)
-        print("HF ground state energy:{:.5f}".format(self.E_HF))
+        print("CASSCF ground state energy:{:.5f}".format(self.E_HF))
         # one-electron Hamiltonian   (H_1)
-        print('Ground state Fock matrix:\n{:}'.format(self.F_ground_state.shape))
+        print('One-electron integrals:\n{:}'.format(self.H_core.shape))
         # two-electron Hamiltnoain (H_2)
         print("Two-electron integrals:\n{:}".format(self.V.shape))
 
@@ -286,7 +286,10 @@ class two_body_model():
         tmp = occupation_number * (np.ones_like(occupation_number) - occupation_number)
         X = sum(occupation_number)
         Y = sum(tmp)
-        L_lambda = (self.n_occ - X) / Y
+        if Y == 0:
+            L_lambda = 0
+        else:
+            L_lambda = (self.n_occ - X) / Y
         occupation_number_correct = occupation_number + L_lambda * tmp
 
         # transfrom the corrected occupation number to the corrected 1-RDM through orbital rotation
@@ -571,21 +574,21 @@ class two_body_model():
             E += self.E_NN
 
             if self.chemical_potential:
-                if beta_tmp < 1. / (self.kb * 5e4):
-                    # compute chemical potential
-                    mu, delta_1, delta_2 = self._calculate_chemical_potential(R_1, T)
-                    # apply chemical potential to CC residue
-                    R_1 -= mu * delta_1
-                    R_2 -= mu * delta_2
+                # if beta_tmp < 1. / (self.kb * 5e4):
+                # compute chemical potential
+                mu, delta_1, delta_2 = self._calculate_chemical_potential(R_1, T)
+                # apply chemical potential to CC residue
+                R_1 -= mu * delta_1
+                R_2 -= mu * delta_2
 
                     # E -= mu * self.n_occ
             if self.partial_trace_condition:
-                if beta_tmp < 1. / (self.kb * 5e4):
-                    # correct partial trace residue once it hits the physical boundary
-                    trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
-                    langrange_multiplier, delta_1, delta_2 = self._constraint_partial_trace(R_2, T)
-                    R_1 -= langrange_multiplier * delta_1
-                    R_2 -= langrange_multiplier * delta_2
+                # if beta_tmp < 1. / (self.kb * 5e4):
+                # correct partial trace residue once it hits the physical boundary
+                trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
+                langrange_multiplier, delta_1, delta_2 = self._constraint_partial_trace(R_2, T)
+                R_1 -= langrange_multiplier * delta_1
+                R_2 -= langrange_multiplier * delta_2
 
             # update CC amplitude
             if self.T_2_flag:
