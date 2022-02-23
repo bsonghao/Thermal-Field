@@ -567,6 +567,9 @@ class two_body_model():
             # energy equation
             E = energy(T['t_1'], T['t_2'], self.F_tilde, self.V_tilde)
 
+            # shift core electron energy
+            E += self.E_HF
+
             # apply constant shift to energy equation
             E += self.E_0
 
@@ -581,7 +584,7 @@ class two_body_model():
                 R_1 -= mu * delta_1
                 R_2 -= mu * delta_2
 
-                    # E -= mu * self.n_occ
+                # E -= mu * self.n_occ
             if self.partial_trace_condition:
                 # if beta_tmp < 1. / (self.kb * 5e4):
                 # correct partial trace residue once it hits the physical boundary
