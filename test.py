@@ -17,6 +17,7 @@ def extract_Hamiltonian_parameters(mo_flag, CAS_SCF, mol_HF):
             for beta in range(M):
                 for i in range(size_core):
                     RDM_1_core[alpha, beta] += CI_coefficient[alpha, i] * CI_coefficient[beta, i]
+        # print("core 1-RDM:\n{:}".format(RDM_1_core))
 
         return RDM_1_core
 
@@ -103,7 +104,7 @@ def extract_Hamiltonian_parameters(mo_flag, CAS_SCF, mol_HF):
     Fock_AO_CAS = Cal_Fock_ground_state(active_orbitals, fock_AO)
 
     ## calculate term
-    E_HF = np.trace(np.dot((h_core_AO_CAS_full + fock_AO), RDM_1_core))
+    E_HF = np.trace(np.dot((h_core_AO_CAS_full + h_core_AO), RDM_1_core))
 
     print("constant term in CAS: {:}".format(E_HF))
 
@@ -182,14 +183,15 @@ def main():
     # The mcscf active orbitals are sorted only within each irreps.
     mycas.kernel()
 
-    # extract parameter from the input Hamitonian and HF calculation
-    h_core, eri_integral, Fock_ground_state, E_HF = extract_Hamiltonian_parameters(mo_flag, mycas, molecular_HF)
+    # extract parameter from the input Hamitonian and CAS-SCF calculation
+    h_core, eri_integral, Fock_ground_state, E_core = \
+    extract_Hamiltonian_parameters(mo_flag, mycas, molecular_HF)
 
     # energy expectation value (HF energy)
     # print("CASSCF energy: {:}".format(mycas.e_tot))
-    E_Hartree_Fock = E_HF
+    # E_Hartree_Fock = E_HF
     # E_Hartree_Fock = mycas.e_tot
-    print("energy expectation value (HF energy) (in Hartree):{:.5f}".format(E_Hartree_Fock))
+    print("core electron energy (in Hartree):{:.5f}".format(E_core))
 
     # total number of electron
     OccupationNumber = mycas.mo_occ / 2
@@ -201,12 +203,12 @@ def main():
     NR_energy = mycas.energy_nuc()
 
     # run TFCC & thermal NOE calculation
-    model = two_body_model(E_Hartree_Fock, h_core, Fock_ground_state, eri_integral, nof_electron, molecule=molecule,
-                       E_NN=NR_energy, T_2_flag=False, chemical_potential=True, partial_trace_condition=True)
+    model = two_body_model(E_core, h_core, Fock_ground_state, eri_integral, nof_electron, molecule=molecule,
+                       E_NN=NR_energy, T_2_flag=True, chemical_potential=True, partial_trace_condition=True)
     # thermal field transform
     model.thermal_field_transform(T=1e8)
     # TFCC imaginary time integration
-    model.TFCC_integration(T_final=1e3, N=10000, direct_flag=True, exchange_flag=True)
+    model.TFCC_integration(T_final=2e3, N=10000, direct_flag=True, exchange_flag=True)
     # plot thermal properties
     model.Plot_thermal()
 

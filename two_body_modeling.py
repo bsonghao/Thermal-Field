@@ -12,9 +12,9 @@ class two_body_model():
     """ Define a object that implement thermal field coupled_cluster
         method and thermal NOE method
         for GS and thermal property calculations for two-electron Hamiltonian """
-    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, molecule, E_NN, T_2_flag=True, chemical_potential=True, partial_trace_condition=True):
+    def __init__(self, E_core, H_core, Fock, V_eri, n_occ, molecule, E_NN, T_2_flag=True, chemical_potential=True, partial_trace_condition=True):
         """
-        E_HF: energy expectation value (Hartree Fock GS energy)
+        E_core: core electron contribution of the Hamiltonian
         Fock: ground_state_Fock_matrix
         H_core: core electron Hamiltonian
         V_eri: 2-electron integral (chemist's notation)
@@ -28,7 +28,7 @@ class two_body_model():
         (all electron integrals are represented in MO basis)
         """
         print("***<start of input parameters>***")
-        self.E_HF = E_HF
+        self.E_core = E_core
         self.V = V_eri
         self.n_occ = n_occ
         self.molecule = molecule
@@ -56,7 +56,9 @@ class two_body_model():
         self.one_fourth = 1. / 4.
         # initialize Hamiltonian
         # constant part of the full Hamiltonian (H_0)
-        print("CASSCF ground state energy:{:.5f}".format(self.E_HF))
+        print("core electron energy:{:.5f}".format(self.E_core))
+
+        print("nuclear repulsion enegy:{:}".format(self.E_NN))
         # one-electron Hamiltonian   (H_1)
         print('One-electron integrals:\n{:}'.format(self.H_core.shape))
         # two-electron Hamiltnoain (H_2)
@@ -568,7 +570,7 @@ class two_body_model():
             E = energy(T['t_1'], T['t_2'], self.F_tilde, self.V_tilde)
 
             # shift core electron energy
-            E += self.E_HF
+            E += self.E_core
 
             # apply constant shift to energy equation
             E += self.E_0
