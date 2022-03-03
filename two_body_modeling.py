@@ -556,6 +556,7 @@ class two_body_model():
         self.n_el_th = []
         self.mu_th = []
         self.occ = []
+        self.L_lambda = []
         # initial P, Q, G plots
         self.P_Q_G_condition = {"T(K)": self.T_grid, "P": [], "Q": [], "G": []}
 
@@ -671,6 +672,12 @@ class two_body_model():
                     self.mu_th.append(mu)
                 else:
                     self.mu_th.append(0)
+
+                # store langrange multiplier for two partial constraint
+                if self.partial_trace_condition:
+                    self.L_lambda.append(langrange_multiplier)
+                else:
+                    self.L_lambda.append(0)
                 # store total number of electrons
                 self.n_el_th.append(n_el)
                 # store partition function
@@ -704,7 +711,7 @@ class two_body_model():
 
         # store thermal property data
         thermal_prop = {"T": self.T_grid, "Z": self.Z_th, "mu": self.mu_th,
-                        "U": self.E_th, "n_el": self.n_el_th}
+                        "U": self.E_th, "n_el": self.n_el_th, "lambda": self.L_lambda}
 
         df = pd.DataFrame(thermal_prop)
         if self.T_2_flag:
