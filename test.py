@@ -160,8 +160,13 @@ def main():
 
     N2 = 'N 0 0 0; N 0 0 2.0'
 
-    atom = N2
-    molecule = "N2"
+    # active space of molecules
+    CAS_N2 = (6, 6)
+    CAS_HF = (4, 6)
+    CAS_O2 = (8, 6)
+
+    atom = HF
+    molecule = "HF"
 
     # setup model input using gaussian-type-orbitals
     molecular_HF = gto.M(
@@ -175,7 +180,7 @@ def main():
     # run HF calculation
     mean_field = scf.RHF(molecular_HF).run()
     # 6 orbital, 6 electrons
-    mycas = mcscf.CASSCF(mean_field, 6, 6)
+    mycas = mean_field.CASSCF(CAS_HF[0], CAS_HF[1])
     mycas.natorb = True
     # Here mycas.mo_coeff are natural orbitals because .natorb is on.
     # Note The active space orbitals have the same symmetry as the input HF
@@ -204,7 +209,7 @@ def main():
 
     # run TFCC & thermal NOE calculation
     model = two_body_model(E_core, h_core, Fock_ground_state, eri_integral, nof_electron, molecule=molecule,
-                       E_NN=NR_energy, T_2_flag=True, chemical_potential=True, partial_trace_condition=True)
+                       E_NN=NR_energy, T_2_flag=False, chemical_potential=True, partial_trace_condition=True)
     # thermal field transform
     model.thermal_field_transform(T=1e8)
     # TFCC imaginary time integration
