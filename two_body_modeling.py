@@ -12,7 +12,7 @@ class two_body_model():
     """ Define a object that implement thermal field coupled_cluster
         method and thermal NOE method
         for GS and thermal property calculations for two-electron Hamiltonian """
-    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, molecule, E_NN, T_2_flag=True, chemical_potential=True, partial_trace_condition=True):
+    def __init__(self, E_HF, H_core, Fock, V_eri, n_occ, molecule, E_NN, T_2_flag=True, chemical_potential_flag=True, partial_trace_condition_flag=True):
         """
         E_HF: energy expectation value (Hartree Fock GS energy)
         H_core: core electron Hamiltonian
@@ -36,8 +36,8 @@ class two_body_model():
         self.H_core = H_core
 
         self.T_2_flag = T_2_flag
-        self.chemical_potential = chemical_potential
-        self.partial_trace_condition = partial_trace_condition
+        self.chemical_potential_flag = chemical_potential_flag
+        self.partial_trace_condition_flag = partial_trace_condition_flag
         # construct Fock matrix (from 1e and 2e integral)
         self.F_ground_state = Fock
 
@@ -488,8 +488,13 @@ class two_body_model():
         delta_1, delta_2 = \
                         update_amps(T['t_1'], T['t_2'], self.n_tilde, np.zeros([self.M, self.M, self.M, self.M]), flag=True)
         chemical_potential = np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, R_1)
-        chemical_potential /= np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, delta_1)
 
+        denominator = np.einsum('p,p,pp->', self.cos_theta, self.sin_theta, delta_1)
+        # fix numberical issue on chemical poential
+        if np.isclose(denominator, 0):
+            chemical_potential =0
+        else:
+            chemical_potential /= denominator
         return chemical_potential, delta_1, delta_2
 
     def _calculate_partial_trace_residue(self, RDM_1, T_2):
@@ -515,7 +520,11 @@ class two_body_model():
                         update_amps(T['t_1'], T['t_2'], zero_one_int, self.O_tilde, flag=False)
 
         langrange_multiplier = np.einsum('p,p,p,p,pppp->', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, R_2)
-        langrange_multiplier /= np.einsum('p,p,p,p,pppp->', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, delta_2)
+        denominator =  np.einsum('p,p,p,p,pppp->', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, delta_2)
+        if np.isclose(denominator, 0):
+            langrange_multiplier = 0
+        else:
+            langrange_multiplier /= denominator
 
         return langrange_multiplier, delta_1, delta_2
 
@@ -542,22 +551,29 @@ class two_body_model():
 
         return T_initial
 
-    def _cal_one_body_inter_pic_transformation_matrix(self, tau):
+    def _cal_one_body_inter_pic_transformation_matrix(self, tau, DM_flag=False):
         """calculation one body interaction picture tranformation matrix"""
         U = np.zeros([self.M, self.M])
         for p in range(self.M):
             for q in range(self.M):
-                U[p, q] = np.exp(tau * (self.F_physical[p, p] - self.F_physical[q, q]))
+                if DM_flag:
+                    exponential_factor = -self.F_physical[p, p] + self.F_physical[q, q]
+                else:
+                    exponential_factor = self.F_physical[p, p] - self.F_physical[q, q]
+                U[p, q] = np.exp(tau * exponential_factor)
         return U
 
-    def _cal_two_body_inter_pic_transformation_matrix(self, tau):
+    def _cal_two_body_inter_pic_transformation_matrix(self, tau, DM_flag=False):
         """calculation two body interaction picture tranformation matrix"""
         U = np.zeros([self.M, self.M, self.M, self.M])
         for p in range(self.M):
             for q in range(self.M):
                 for r in range(self.M):
                     for s in range(self.M):
-                        exponential_factor = self.F_physical[p, p] + self.F_physical[q, q] - self.F_physical[r, r] - self.F_physical[s, s]
+                        if DM_flag:
+                            exponential_factor = self.F_physical[p, p] + self.F_physical[q, q] - self.F_physical[r, r] - self.F_physical[s, s]
+                        else:
+                            exponential_factor = -self.F_physical[p, p] - self.F_physical[q, q] + self.F_physical[r, r] + self.F_physical[s, s]
                         U[p, q, r, s] = np.exp(tau * exponential_factor)
         return U
 
@@ -586,15 +602,20 @@ class two_body_model():
 
     def _cal_2_RDM_inter_pic(self, U, C_1, T):
         """calculate 1-RDM in interaction picture"""
-        RDM_2 = np.einsum('pr,qs->pqrs',C_1,C_1)
-        RDM_2 -= np.einsum('ps,qr->pqrs',C_1, C_1)
+        RDM_2 = np.einsum('pr,qs->pqrs', C_1, C_1)
+        RDM_2 -= np.einsum('ps,qr->pqrs', C_1, C_1)
         RDM_2 += np.einsum('r,s,p,q,rspq->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T['t_2'])
 
         RDM_2 = np.einsum('pqrs,pqrs->pqrs', RDM_2, U)
 
         return RDM_2
 
+    def _update_one_body_V(self, chemical_potential):
+        """update one electon Hamiltonian basic on chemical potential"""
+        for block in self.V_one_body_tilde.keys():
+            self.V_one_body_tilde[block] -= chemical_potential * self.n_tilde[block]
 
+        return
 
     def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties (mix interaction picture method)"""
@@ -622,15 +643,21 @@ class two_body_model():
         # initial trace residue plot
         self.trace_condition = {"T(K)": self.T_grid, "R": []}
 
+        # store energy with adjacent integration step
+        energy_adjacent = np.zeros(2)
+
         # imaginary propagation
         for i in range(N):
             # calculate tranformation matrix for interaction picture
-            U_one_body = self._cal_one_body_inter_pic_transformation_matrix(beta_tmp)
-            U_two_body = self._cal_two_body_inter_pic_transformation_matrix(beta_tmp)
+            U_one_body_H = self._cal_one_body_inter_pic_transformation_matrix(beta_tmp, DM_flag=True)
+            U_one_body_DM = self._cal_one_body_inter_pic_transformation_matrix(beta_tmp, DM_flag=False)
+
+            U_two_body_H = self._cal_two_body_inter_pic_transformation_matrix(beta_tmp, DM_flag=True)
+            U_two_body_DM = self._cal_two_body_inter_pic_transformation_matrix(beta_tmp, DM_flag=False)
 
             # transform perturbation Hamiltonian to interaction picture
-            V_I_one_body = self._transform_one_body_V_to_inter_pic(U_one_body)
-            V_I_two_body = self._transform_two_body_V_to_inter_pic(U_two_body)
+            V_I_one_body = self._transform_one_body_V_to_inter_pic(U_one_body_H)
+            V_I_two_body = self._transform_two_body_V_to_inter_pic(U_two_body_H)
 
             # amplitude equation
             R_1, R_2 = update_amps(T['t_1'], T['t_2'], V_I_one_body, V_I_two_body)
@@ -643,22 +670,33 @@ class two_body_model():
             # apply nuclear repulsion energy to energy equation
             E += self.E_NN
 
-            if self.chemical_potential:
-                if beta_tmp < 1. / (self.kb * 5e4):
-                    # compute chemical potential
-                    mu, delta_1, delta_2 = self._calculate_chemical_potential(R_1, T)
-                    # apply chemical potential to CC residue
-                    R_1 -= mu * delta_1
-                    R_2 -= mu * delta_2
+            if i==0:
+                energy_adjacent[0] = E
+            elif i == 1:
+                energy_adjacent[1] = E
+            else:
+                energy_adjacent[0] = energy_adjacent[1]
+                energy_adjacent[1] = E
+                print("energy in adjacent steps:{:}".format(energy_adjacent))
+                if np.isclose(energy_adjacent[0], energy_adjacent[1]):
+                    print("energy has converge!")
+                    print("converge energy:{:.5f}".format(E))
+                    # break
 
-                    # E -= mu * self.n_occ
-            if self.partial_trace_condition:
-                if beta_tmp < 1. / (self.kb * 5e4):
-                    # correct partial trace residue once it hits the physical boundary
-                    trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
-                    langrange_multiplier, delta_1, delta_2 = self._constraint_partial_trace(R_2, T)
-                    R_1 -= langrange_multiplier * delta_1
-                    R_2 -= langrange_multiplier * delta_2
+            if self.chemical_potential_flag:
+                chemical_potential, delta_1, delta_2 = self._calculate_chemical_potential(R_1, T)
+                R_1 -= chemical_potential * delta_1
+                R_2 -= chemical_potential * delta_2
+
+            if self.partial_trace_condition_flag:
+                trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
+                langrange_multiplier, delta_1, delta_2 = self._constraint_partial_trace(R_2, T)
+                R_1 -= langrange_multiplier * delta_1
+                R_2 -= langrange_multiplier * delta_2
+
+            # update one electron Hamiltonian
+            if self.chemical_potential_flag:
+                self._update_one_body_V(chemical_potential)
 
             # update CC amplitude
             if self.T_2_flag:
@@ -670,41 +708,16 @@ class two_body_model():
 
             # compute RDM (in interaction picture)
             # 1-RDM
-            C_1, RDM_1 = self._cal_1_RDM_inter_pic(U_one_body, T)
+            C_1, RDM_1 = self._cal_1_RDM_inter_pic(U_one_body_DM, T)
             # 2-RDM (chemist's notation)
-            RDM_2 = self._cal_2_RDM_inter_pic(U_two_body, C_1, T)
+            RDM_2 = self._cal_2_RDM_inter_pic(U_two_body_DM, C_1, T)
 
             # add zero order correction to constant residue (CC energy expression)
-            zero_order_energy = np.trace(np.dot(self.K_0, RDM_1))
+            # zero_order_energy = np.trace(np.dot(self.K_0, RDM_1))
             # calculate occupation number
             occupation_number, nat = np.linalg.eig(RDM_1)
             # sort occupation number
             occupation_number = np.sort(occupation_number)
-
-
-            # symmetrize density matrix and T amplitude
-            # RDM_1_sym, RDM_2_sym, T_1_sym, T_2_sym = self._symmetrize_density_matrix(RDM_1, RDM_2)
-            # if self.T_2_flag:
-                # T['t_2'] = T_2_sym
-
-            # correct the occupation number
-            # occupation_number_correct, RDM_1_correct, T_1_correct = self._correct_occupation_number(RDM_1_sym)
-            # T['t_1'] = T_1_correct
-
-            # if direct_flag:
-                # correct direct two body density matrix
-                # T_2_correct_direct = self._correct_two_body_density_matrix(RDM_1, T['t_2'])
-                # for p, q in it.product(range(self.M), repeat=2):
-                    # T['t_2'][p, p, q, q] = T_2_correct_direct[p, q]
-
-            # if exchange_flag:
-                # correct exchange two body density matrix
-                # T_2_correct_exchange = self._correct_exchange_two_body_cumulant(RDM_1, T['t_2'])
-                # for p, q in it.product(range(self.M), repeat=2):
-                    # if p != q:
-                        # T['t_2'][p, q, q, p] = T_2_correct_exchange[p, q]
-                    # else:
-                        # pass
 
             # check N representability condition
             # P_cumulant, Q_cumulant, G_cumulant = self._check_P_Q_G_condition(RDM_1, T['t_2'])
@@ -719,26 +732,21 @@ class two_body_model():
                 print("max 1-RDM:\n{:.3f}".format(abs(RDM_1).max()))
                 print("max 2-RDM:\n{:.3f}".format(abs(RDM_2).max()))
                 print("number of electron:{:.3f}".format(n_el))
-                if self.chemical_potential:
-                    print("chemical potential:{:} cm-1".format(mu))
-                if self.partial_trace_condition:
+                if self.chemical_potential_flag:
+                    print("chemical potential:{:} cm-1".format(chemical_potential))
+                if self.partial_trace_condition_flag:
                     print("langrange multilpier for partial trace constraint:{:} cm-1".format(langrange_multiplier))
                 print("occupation number:\n{:}".format(occupation_number))
-                print("thermal internal energy:{:.3f}".format(E + zero_order_energy))
-                # print("*** N representability condition")
-                # print("P condition:{:.5f}".format(P_cumulant.min()))
-                # print("Q condition:{:.5f}".format(Q_cumulant.min()))
-                # print("G condition:{:.5f}".format(G_cumulant.min()))
+                print("thermal internal energy:{:.3f}".format(E))
                 print("Trace condition:")
-                # print("shape of RDM_2:{:}".format(RDM_2.shape))
                 print("trace of two body density matrix:{:.5f}".format(np.einsum('pppp->', RDM_2)))
                 print("trace of two body cumulant residue:{:.5f}".format(np.trace(trace_residue)))
 
                 # store thermal internal energy
                 self.E_th.append(E)
                 # store chemical potential
-                if self.chemical_potential:
-                    self.mu_th.append(mu)
+                if self.chemical_potential_flag:
+                    self.mu_th.append(chemical_potential)
                 else:
                     self.mu_th.append(0)
                 # store total number of electrons
@@ -747,12 +755,6 @@ class two_body_model():
                 self.Z_th.append(np.exp(T['t_0']))
                 # store occupation number
                 self.occ.append(occupation_number)
-
-                # store data for P Q G condition
-                # self.P_Q_G_condition['P'].append(P_cumulant.min())
-                # self.P_Q_G_condition['Q'].append(Q_cumulant.min())
-                # self.P_Q_G_condition['G'].append(G_cumulant.min())
-
                 # store data for trace residue
                 self.trace_condition['R'].append(np.trace(trace_residue))
                 # break
