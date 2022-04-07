@@ -108,122 +108,154 @@ class two_body_model():
 
     def thermal_field_transform(self, T):
         """conduct Bogoliubov transform on physical Hamiltonian"""
-        # calculation recprical termperature
-        beta = 1. / (self.kb * T)
-        # store beta for reference state a class instance
-        self.beta_reference = beta
-        print("beta:{:.3f}".format(beta))
 
-        # calculate Femi-Dirac occupation number with chemical potential that fixex total number of electron
-        FD_occupation_number, mu_mean_field = self.Cal_mu_FD(np.diag(self.F_ground_state), beta)
+        def Cal_FD_density_matrix_and_define_BV_transform():
+            """choose reference beta and get occupation number n_p and chemical_potential
+            mu from FD statics of zero termperature orbital energies
+            """
+            # calculation recprical termperature
+            beta = 1. / (self.kb * T)
+            # store beta for reference state a class instance
+            self.beta_reference = beta
+            print("beta:{:.3f}".format(beta))
 
-        # construct 1-RDM in canonical basis
-        RDM_1 = np.diag(FD_occupation_number)
+            # calculate Femi-Dirac occupation number with chemical potential that fixex total number of electron
+            FD_occupation_number, mu_mean_field = self.Cal_mu_FD(np.diag(self.F_ground_state), beta)
 
-        print("Fermi-Dirac Occupation number:\n{:}".format(FD_occupation_number))
-        print("initial chemical potential:{:.3f}".format(mu_mean_field))
+            # construct 1-RDM in canonical basis
+            RDM_1 = np.diag(FD_occupation_number)
 
-        # Bogoliubov transform the Hamiltonian from physical space to quasi-particle representation
-        sin_theta = np.sqrt(FD_occupation_number)
-        cos_theta = np.sqrt(1 - FD_occupation_number)
+            print("Fermi-Dirac Occupation number:\n{:}".format(FD_occupation_number))
+            print("initial chemical potential:{:.3f}".format(mu_mean_field))
 
-        # store sin_theta and cos_theta as object as instance
-        self.sin_theta = sin_theta
-        self.cos_theta = cos_theta
+            # define Bogliubov transformation based on FD occupation number
+            sin_theta = np.sqrt(FD_occupation_number)
+            cos_theta = np.sqrt(1 - FD_occupation_number)
 
-        # Bogoliubov transform the one body density matrix at zero beta
-        self.n_tilde = {
-            "ij": np.einsum('i,j,ij->ij', self.sin_theta, self.sin_theta, np.eye(self.M)),
-            "ai": np.einsum('a,i,ai->ai', self.cos_theta, self.sin_theta, np.eye(self.M)),
-            "ia": np.einsum('i,a,ia->ia', self.sin_theta, self.cos_theta, np.eye(self.M)),
-            "ab": np.einsum('a,b,ab->ab', self.cos_theta, self.cos_theta, np.eye(self.M))}
+            # store sin_theta and cos_theta as object as instance
+            self.sin_theta = sin_theta
+            self.cos_theta = cos_theta
 
-        # Bogoliubov transform the two body density matrix at zero beta
-        # 2-electron density matrix at zero beta (16 terms)
-        two_body_DM = 0.5 * np.einsum('pr,qs->pqrs', np.eye(self.M), np.eye(self.M))
+            return RDM_1, mu_mean_field
 
-        self.O_tilde = {
-              "ijkl": np.einsum('i,j,k,l,ijkl->ijkl', sin_theta, sin_theta, sin_theta, sin_theta, two_body_DM),
-              "abcd": np.einsum('a,b,c,d,abcd->abcd', cos_theta, cos_theta, cos_theta, cos_theta, two_body_DM),
-              "ijab": np.einsum('i,j,a,b,ijab->ijab', sin_theta, sin_theta, cos_theta, cos_theta, two_body_DM),
-              "aibc": np.einsum('a,i,b,c,aibc->aibc', cos_theta, sin_theta, cos_theta, cos_theta, two_body_DM),
-              "ijka": np.einsum('i,j,k,a,ijka->ijka', sin_theta, sin_theta, sin_theta, cos_theta, two_body_DM),
-              "aijb": np.einsum('a,i,j,b,aijb->aijb', cos_theta, sin_theta, sin_theta, cos_theta, two_body_DM),
-              "abci": np.einsum('a,b,c,i,abci->abci', cos_theta, cos_theta, cos_theta, sin_theta, two_body_DM),
-              "iajk": np.einsum('i,a,j,k,iajk->iajk', sin_theta, cos_theta, sin_theta, sin_theta, two_body_DM),
-              "iabc": np.einsum('i,a,b,c,iabc->iabc', sin_theta, cos_theta, cos_theta, cos_theta, two_body_DM),
-              "ijak": np.einsum('i,j,a,k,ijak->ijak', sin_theta, sin_theta, cos_theta, sin_theta, two_body_DM),
-              "iabj": np.einsum('i,a,b,j,iabj->iabj', sin_theta, cos_theta, cos_theta, sin_theta, two_body_DM),
-              "abij": np.einsum('a,b,i,j,abij->abij', cos_theta, cos_theta, sin_theta, sin_theta, two_body_DM),
-              "abic": np.einsum('a,b,i,c,abic->abic', cos_theta, cos_theta, sin_theta, cos_theta, two_body_DM),
-              "aibj": np.einsum('a,i,b,j,aibj->aibj', cos_theta, sin_theta, cos_theta, sin_theta, two_body_DM),
-              "aijk": np.einsum('a,i,j,k,aijk->aijk', cos_theta, sin_theta, sin_theta, sin_theta, two_body_DM),
-              "iajb": np.einsum('i,a,j,b,iajb->iajb', sin_theta, cos_theta, sin_theta, cos_theta, two_body_DM)
-              }
+        def Bogliubov_transform():
+            """Bogliubov transform all quantities from physical space to Bogliubov space"""
+            # Bogoliubov transform the one body density matrix at zero beta
+            self.n_tilde = {
+                "ij": np.einsum('i,j,ij->ij', self.sin_theta, self.sin_theta, np.eye(self.M)),
+                "ai": np.einsum('a,i,ai->ai', self.cos_theta, self.sin_theta, np.eye(self.M)),
+                "ia": np.einsum('i,a,ia->ia', self.sin_theta, self.cos_theta, np.eye(self.M)),
+                "ab": np.einsum('a,b,ab->ab', self.cos_theta, self.cos_theta, np.eye(self.M))}
 
+            # Bogoliubov transform the two body density matrix at zero beta
+            # 2-electron density matrix at zero beta (16 terms)
+            two_body_DM = 0.5 * np.einsum('pr,qs->pqrs', np.eye(self.M), np.eye(self.M))
+
+            self.O_tilde = {
+                  "ijkl": np.einsum('i,j,k,l,ijkl->ijkl', self.sin_theta, self.sin_theta, self.sin_theta, self.sin_theta, two_body_DM),
+                  "abcd": np.einsum('a,b,c,d,abcd->abcd', self.cos_theta, self.cos_theta, self.cos_theta, self.cos_theta, two_body_DM),
+                  "ijab": np.einsum('i,j,a,b,ijab->ijab', self.sin_theta, self.sin_theta, self.cos_theta, self.cos_theta, two_body_DM),
+                  "aibc": np.einsum('a,i,b,c,aibc->aibc', self.cos_theta, self.sin_theta, self.cos_theta, self.cos_theta, two_body_DM),
+                  "ijka": np.einsum('i,j,k,a,ijka->ijka', self.sin_theta, self.sin_theta, self.sin_theta, self.cos_theta, two_body_DM),
+                  "aijb": np.einsum('a,i,j,b,aijb->aijb', self.cos_theta, self.sin_theta, self.sin_theta, self.cos_theta, two_body_DM),
+                  "abci": np.einsum('a,b,c,i,abci->abci', self.cos_theta, self.cos_theta, self.cos_theta, self.sin_theta, two_body_DM),
+                  "iajk": np.einsum('i,a,j,k,iajk->iajk', self.sin_theta, self.cos_theta, self.sin_theta, self.sin_theta, two_body_DM),
+                  "iabc": np.einsum('i,a,b,c,iabc->iabc', self.sin_theta, self.cos_theta, self.cos_theta, self.cos_theta, two_body_DM),
+                  "ijak": np.einsum('i,j,a,k,ijak->ijak', self.sin_theta, self.sin_theta, self.cos_theta, self.sin_theta, two_body_DM),
+                  "iabj": np.einsum('i,a,b,j,iabj->iabj', self.sin_theta, self.cos_theta, self.cos_theta, self.sin_theta, two_body_DM),
+                  "abij": np.einsum('a,b,i,j,abij->abij', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, two_body_DM),
+                  "abic": np.einsum('a,b,i,c,abic->abic', self.cos_theta, self.cos_theta, self.sin_theta, self.cos_theta, two_body_DM),
+                  "aibj": np.einsum('a,i,b,j,aibj->aibj', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta, two_body_DM),
+                  "aijk": np.einsum('a,i,j,k,aijk->aijk', self.cos_theta, self.sin_theta, self.sin_theta, self.sin_theta, two_body_DM),
+                  "iajb": np.einsum('i,a,j,b,iajb->iajb', self.sin_theta, self.cos_theta, self.sin_theta, self.cos_theta, two_body_DM)
+                  }
+
+            # Bogoliubov transform the one body pertubation Hamiltonian at reference temperature (4 blocks)
+            self.V_one_body_tilde = {
+                  "ij": np.einsum('i,j,ij->ij', self.sin_theta, self.sin_theta, self.V_one_body),
+                  "ai": np.einsum('a,i,ai->ai', self.cos_theta, self.sin_theta, self.V_one_body),
+                  "ia": np.einsum('i,a,ia->ia', self.sin_theta, self.cos_theta, self.V_one_body),
+                  "ab": np.einsum('a,b,ab->ab', self.cos_theta, self.cos_theta, self.V_one_body)
+                  }
+
+            print("One-body pertubation Hamiltonian in quasi-particle representation")
+            print("V_one_body_tilde_ij:\n{:}".format(self.V_one_body_tilde['ij'].shape))
+            print("V_one_body_tilde_ai:\n{:}".format(self.V_one_body_tilde['ai'].shape))
+            print("V_one_body_tilde_ia:\n{:}".format(self.V_one_body_tilde['ia'].shape))
+            print("V_one_body_tilde_ab:\n{:}".format(self.V_one_body_tilde['ab'].shape))
+            # Bogoliubov transform the two body perturbation Hamiltonian at reference temperature (16 blocks)
+            self.V_two_body_tilde = {
+                  "ijkl": np.einsum('i,j,k,l,ijkl->ijkl', self.sin_theta, self.sin_theta, self.sin_theta, self.sin_theta, self.V_two_body),
+                  "abcd": np.einsum('a,b,c,d,abcd->abcd', self.cos_theta, self.cos_theta, self.cos_theta, self.cos_theta, self.V_two_body),
+                  "ijab": np.einsum('i,j,a,b,ijab->ijab', self.sin_theta, self.sin_theta, self.cos_theta, self.cos_theta, self.V_two_body),
+                  "aibc": np.einsum('a,i,b,c,aibc->aibc', self.cos_theta, self.sin_theta, self.cos_theta, self.cos_theta, self.V_two_body),
+                  "ijka": np.einsum('i,j,k,a,ijka->ijka', self.sin_theta, self.sin_theta, self.sin_theta, self.cos_theta, self.V_two_body),
+                  "aijb": np.einsum('a,i,j,b,aijb->aijb', self.cos_theta, self.sin_theta, self.sin_theta, self.cos_theta, self.V_two_body),
+                  "abci": np.einsum('a,b,c,i,abci->abci', self.cos_theta, self.cos_theta, self.cos_theta, self.sin_theta, self.V_two_body),
+                  "iajk": np.einsum('i,a,j,k,iajk->iajk', self.sin_theta, self.cos_theta, self.sin_theta, self.sin_theta, self.V_two_body),
+                  "iabc": np.einsum('i,a,b,c,iabc->iabc', self.sin_theta, self.cos_theta, self.cos_theta, self.cos_theta, self.V_two_body),
+                  "ijak": np.einsum('i,j,a,k,ijak->ijak', self.sin_theta, self.sin_theta, self.cos_theta, self.sin_theta, self.V_two_body),
+                  "iabj": np.einsum('i,a,b,j,iabj->iabj', self.sin_theta, self.cos_theta, self.cos_theta, self.sin_theta, self.V_two_body),
+                  "abij": np.einsum('a,b,i,j,abij->abij', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, self.V_two_body),
+                  "abic": np.einsum('a,b,i,c,abic->abic', self.cos_theta, self.cos_theta, self.sin_theta, self.cos_theta, self.V_two_body),
+                  "aibj": np.einsum('a,i,b,j,aibj->aibj', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta, self.V_two_body),
+                  "aijk": np.einsum('a,i,j,k,aijk->aijk', self.cos_theta, self.sin_theta, self.sin_theta, self.sin_theta, self.V_two_body),
+                  "iajb": np.einsum('i,a,j,b,iajb->iajb', self.sin_theta, self.cos_theta, self.sin_theta, self.cos_theta, self.V_two_body)
+                  }
+            print("two-body pertubation Hamiltonian in quasi-particle representation")
+            print("V_two_body_tilde_ijkl:\n{:}".format(self.V_two_body_tilde['ijkl'].shape))
+            print("V_two_body_tilde_abcd:\n{:}".format(self.V_two_body_tilde['abcd'].shape))
+            print("V_two_body_tilde_ijab:\n{:}".format(self.V_two_body_tilde['ijab'].shape))
+            print("V_two_body_tilde_aibc:\n{:}".format(self.V_two_body_tilde['aibc'].shape))
+            print("V_two_body_tilde_ijka:\n{:}".format(self.V_two_body_tilde['ijka'].shape))
+            print("V_two_body_tilde_aijb:\n{:}".format(self.V_two_body_tilde['aijb'].shape))
+            print("V_two_body_tilde_abci:\n{:}".format(self.V_two_body_tilde['abci'].shape))
+            print("V_two_body_tilde_iajk:\n{:}".format(self.V_two_body_tilde['iajk'].shape))
+            print("V_two_body_tilde_iabc:\n{:}".format(self.V_two_body_tilde['iabc'].shape))
+            print("V_two_body_tilde_ijak:\n{:}".format(self.V_two_body_tilde['ijak'].shape))
+            print("V_two_body_tilde_iabj:\n{:}".format(self.V_two_body_tilde['iabj'].shape))
+            print("V_two_body_tilde_abij:\n{:}".format(self.V_two_body_tilde['abij'].shape))
+            print("V_two_body_tilde_abic:\n{:}".format(self.V_two_body_tilde['abic'].shape))
+            print("V_two_body_tilde_aibj:\n{:}".format(self.V_two_body_tilde['aibj'].shape))
+            print("V_two_body_tilde_aijk:\n{:}".format(self.V_two_body_tilde['aijk'].shape))
+            print("V_two_body_tilde_iajb:\n{:}".format(self.V_two_body_tilde['iajb'].shape))
+            return
+
+        def Partition_Hamiltonian(density_matrix):
+            """partition the Hamiltonian into a mean part + perturbation part"""
+            # determine the constant term in the normal ordering based on thermal field reference state
+            self.E_0 = np.trace(np.dot((self.H_core + self.F_physical), density_matrix))
+            print("constant term:{:}".format(self.E_0))
+
+            # partition the Hamiltonian into mean-field part + pertubation part
+            self.K_0 = self.E_0 + self.F_physical - mu_mean_field * np.eye(self.M)
+            # one electron part of perturbation Hamiltonian
+            self.V_one_body = self.F_physical - self.K_0 + self.E_0
+            # two electron part of perturbation Hamiltonian
+            self.V_two_body = self.V_eri
+
+            return
+
+        # STEP 2:
+        # calculation denisty matrix and chemical potential based on FD statistics and define BV transformation
+        ###############################################################################
+        RDM_1, mu_mean_field = Cal_FD_density_matrix_and_define_BV_transform()
+
+        # STEP 3:
+        ###############################################################################
         # construct Fock matrix from 1-electron and 2-electron integrals
         self.F_physical = self._construct_fock_matrix_from_physical_Hamiltonian(RDM_1)
 
-        # determine the constant shift
-        self.E_0 = np.trace(np.dot((self.H_core + self.F_physical), RDM_1))
+        # STEP 4:
+        # partition the Hamiltonian
+        ###############################################################################
+        Partition_Hamiltonian(RDM_1)
 
-        print("constant term:{:}".format(self.E_0))
+        # STEP 5:
+        # conduct BV transform for all relevant quantites from physcal space to Bogliubov space
+        ###############################################################################
+        Bogliubov_transform()
 
-        # partition the Hamiltonian into mean-field part + pertubation part
-        self.K_0 = self.F_physical - mu_mean_field * np.eye(self.M)
-        # one electron part of perturbation Hamiltonian
-        self.V_one_body = mu_mean_field * np.eye(self.M)
-        # two electron part of perturbation Hamiltonian
-        self.V_two_body = self.V_eri
-        # Bogoliubov transform the one body pertubation Hamiltonian at reference temperature (4 blocks)
-        self.V_one_body_tilde = {
-              "ij": np.einsum('i,j,ij->ij', self.sin_theta, self.sin_theta, self.V_one_body),
-              "ai": np.einsum('a,i,ai->ai', self.cos_theta, self.sin_theta, self.V_one_body),
-              "ia": np.einsum('i,a,ia->ia', self.sin_theta, self.cos_theta, self.V_one_body),
-              "ab": np.einsum('a,b,ab->ab', self.cos_theta, self.cos_theta, self.V_one_body)
-              }
-
-        print("One-body pertubation Hamiltonian in quasi-particle representation")
-        print("V_one_body_tilde_ij:\n{:}".format(self.V_one_body_tilde['ij'].shape))
-        print("V_one_body_tilde_ai:\n{:}".format(self.V_one_body_tilde['ai'].shape))
-        print("V_one_body_tilde_ia:\n{:}".format(self.V_one_body_tilde['ia'].shape))
-        print("V_one_body_tilde_ab:\n{:}".format(self.V_one_body_tilde['ab'].shape))
-        # Bogoliubov transform the two body perturbation Hamiltonian at reference temperature (16 blocks)
-        self.V_two_body_tilde = {
-              "ijkl": np.einsum('i,j,k,l,ijkl->ijkl', sin_theta, sin_theta, sin_theta, sin_theta, self.V_two_body),
-              "abcd": np.einsum('a,b,c,d,abcd->abcd', cos_theta, cos_theta, cos_theta, cos_theta, self.V_two_body),
-              "ijab": np.einsum('i,j,a,b,ijab->ijab', sin_theta, sin_theta, cos_theta, cos_theta, self.V_two_body),
-              "aibc": np.einsum('a,i,b,c,aibc->aibc', cos_theta, sin_theta, cos_theta, cos_theta, self.V_two_body),
-              "ijka": np.einsum('i,j,k,a,ijka->ijka', sin_theta, sin_theta, sin_theta, cos_theta, self.V_two_body),
-              "aijb": np.einsum('a,i,j,b,aijb->aijb', cos_theta, sin_theta, sin_theta, cos_theta, self.V_two_body),
-              "abci": np.einsum('a,b,c,i,abci->abci', cos_theta, cos_theta, cos_theta, sin_theta, self.V_two_body),
-              "iajk": np.einsum('i,a,j,k,iajk->iajk', sin_theta, cos_theta, sin_theta, sin_theta, self.V_two_body),
-              "iabc": np.einsum('i,a,b,c,iabc->iabc', sin_theta, cos_theta, cos_theta, cos_theta, self.V_two_body),
-              "ijak": np.einsum('i,j,a,k,ijak->ijak', sin_theta, sin_theta, cos_theta, sin_theta, self.V_two_body),
-              "iabj": np.einsum('i,a,b,j,iabj->iabj', sin_theta, cos_theta, cos_theta, sin_theta, self.V_two_body),
-              "abij": np.einsum('a,b,i,j,abij->abij', cos_theta, cos_theta, sin_theta, sin_theta, self.V_two_body),
-              "abic": np.einsum('a,b,i,c,abic->abic', cos_theta, cos_theta, sin_theta, cos_theta, self.V_two_body),
-              "aibj": np.einsum('a,i,b,j,aibj->aibj', cos_theta, sin_theta, cos_theta, sin_theta, self.V_two_body),
-              "aijk": np.einsum('a,i,j,k,aijk->aijk', cos_theta, sin_theta, sin_theta, sin_theta, self.V_two_body),
-              "iajb": np.einsum('i,a,j,b,iajb->iajb', sin_theta, cos_theta, sin_theta, cos_theta, self.V_two_body)
-              }
-        print("two-body pertubation Hamiltonian in quasi-particle representation")
-        print("V_two_body_tilde_ijkl:\n{:}".format(self.V_two_body_tilde['ijkl'].shape))
-        print("V_two_body_tilde_abcd:\n{:}".format(self.V_two_body_tilde['abcd'].shape))
-        print("V_two_body_tilde_ijab:\n{:}".format(self.V_two_body_tilde['ijab'].shape))
-        print("V_two_body_tilde_aibc:\n{:}".format(self.V_two_body_tilde['aibc'].shape))
-        print("V_two_body_tilde_ijka:\n{:}".format(self.V_two_body_tilde['ijka'].shape))
-        print("V_two_body_tilde_aijb:\n{:}".format(self.V_two_body_tilde['aijb'].shape))
-        print("V_two_body_tilde_abci:\n{:}".format(self.V_two_body_tilde['abci'].shape))
-        print("V_two_body_tilde_iajk:\n{:}".format(self.V_two_body_tilde['iajk'].shape))
-        print("V_two_body_tilde_iabc:\n{:}".format(self.V_two_body_tilde['iabc'].shape))
-        print("V_two_body_tilde_ijak:\n{:}".format(self.V_two_body_tilde['ijak'].shape))
-        print("V_two_body_tilde_iabj:\n{:}".format(self.V_two_body_tilde['iabj'].shape))
-        print("V_two_body_tilde_abij:\n{:}".format(self.V_two_body_tilde['abij'].shape))
-        print("V_two_body_tilde_abic:\n{:}".format(self.V_two_body_tilde['abic'].shape))
-        print("V_two_body_tilde_aibj:\n{:}".format(self.V_two_body_tilde['aibj'].shape))
-        print("V_two_body_tilde_aijk:\n{:}".format(self.V_two_body_tilde['aijk'].shape))
-        print("V_two_body_tilde_iajb:\n{:}".format(self.V_two_body_tilde['iajb'].shape))
 
         return
 
@@ -644,7 +676,7 @@ class two_body_model():
         self.trace_condition = {"T(K)": self.T_grid, "R": []}
 
         # store energy with adjacent integration step
-        energy_adjacent = np.zeros(2)
+        # energy_adjacent = np.zeros(2)
 
         # imaginary propagation
         for i in range(N):
@@ -670,17 +702,17 @@ class two_body_model():
             # apply nuclear repulsion energy to energy equation
             E += self.E_NN
 
-            if i==0:
-                energy_adjacent[0] = E
-            elif i == 1:
-                energy_adjacent[1] = E
-            else:
-                energy_adjacent[0] = energy_adjacent[1]
-                energy_adjacent[1] = E
-                print("energy in adjacent steps:{:}".format(energy_adjacent))
-                if np.isclose(energy_adjacent[0], energy_adjacent[1]):
-                    print("energy has converge!")
-                    print("converge energy:{:.5f}".format(E))
+            # if i==0:
+                # energy_adjacent[0] = E
+            # elif i == 1:
+                # energy_adjacent[1] = E
+            # else:
+                # energy_adjacent[0] = energy_adjacent[1]
+                # energy_adjacent[1] = E
+                # print("energy in adjacent steps:{:}".format(energy_adjacent))
+                # if np.isclose(energy_adjacent[0], energy_adjacent[1]):
+                    # print("energy has converge!")
+                    # print("converge energy:{:.5f}".format(E))
                     # break
 
             if self.chemical_potential_flag:

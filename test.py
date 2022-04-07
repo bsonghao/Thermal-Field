@@ -1,4 +1,3 @@
-# import pyscf
 from pyscf import gto, scf, ao2mo
 import numpy as np
 from two_body_modeling import two_body_model
@@ -8,7 +7,7 @@ def extract_Hamiltonian_parameters(mo_flag, mean_field, mol_HF):
     """
     extract 1-electron integral, overlap matrix, 2-electron integral and fock matrix from  Hamiltonian parameters
     """
-    # atomic orbitals
+    # exctract Hamiltonian parameters represented in atomic orbitals
 
     # 1-electron integral
     h_core_AO = mol_HF.intor('int1e_kin_sph') + mol_HF.intor('int1e_nuc_sph')
@@ -28,7 +27,7 @@ def extract_Hamiltonian_parameters(mo_flag, mean_field, mol_HF):
     if not mo_flag:
         return h_core_AO, fock_AO, eri_AO, S_AO
 
-    # molecular orbitals
+    # transform Hamiltonian parameters from atomic orbitals to molecular orbitals
 
     # 1-electron integral
     h_core_MO = np.einsum('pi,pq,qj->ij', mean_field.mo_coeff, h_core_AO, mean_field.mo_coeff)
@@ -95,11 +94,11 @@ def main():
 
     # run TFCC & thermal NOE calculation
     model = two_body_model(E_Hartree_Fock, h_core, fock_matrix, eri_integral, nof_electron, molecule=molecule,
-                           E_NN=NR_energy, T_2_flag=True, chemical_potential_flag=True, partial_trace_condition_flag=False)
+                           E_NN=NR_energy, T_2_flag=False, chemical_potential_flag=False, partial_trace_condition_flag=False)
     # thermal field transform
-    model.thermal_field_transform(T=5e6)
+    model.thermal_field_transform(T=1e5)
     # TFCC imaginary time integration
-    model.TFCC_integration(T_final=5e6, N=1000, direct_flag=True, exchange_flag=True)
+    model.TFCC_integration(T_final=1e5, N=10000, direct_flag=True, exchange_flag=True)
     # plot thermal properties
     model.Plot_thermal()
 
