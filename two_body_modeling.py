@@ -228,13 +228,16 @@ class two_body_model():
             print("constant term:{:}".format(self.E_0))
 
             # partition the Hamiltonian into mean-field part + pertubation part
-            self.K_0 = self.E_0 + self.F_physical - mu_mean_field * np.eye(self.M)
+            self.K_0 = self.E_0 + self.F_ground_state - mu_mean_field * np.eye(self.M)
             # one electron part of perturbation Hamiltonian
             self.V_one_body = self.F_physical - self.K_0 + self.E_0
             # two electron part of perturbation Hamiltonian
             self.V_two_body = self.V_eri
 
             return
+
+        # STEP 1 is to get converge Fock matrix from Hartree-Fock calculation which is an input of
+        # the object and have been precalculated from PySCF
 
         # STEP 2:
         # calculation denisty matrix and chemical potential based on FD statistics and define BV transformation
@@ -642,13 +645,6 @@ class two_body_model():
 
         return RDM_2
 
-    def _update_one_body_V(self, chemical_potential):
-        """update one electon Hamiltonian basic on chemical potential"""
-        for block in self.V_one_body_tilde.keys():
-            self.V_one_body_tilde[block] -= chemical_potential * self.n_tilde[block]
-
-        return
-
     def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties (mix interaction picture method)"""
         # map initial T amplitude from Fermi-Dirac statics at reference beta
@@ -718,17 +714,15 @@ class two_body_model():
             if self.chemical_potential_flag:
                 chemical_potential, delta_1, delta_2 = self._calculate_chemical_potential(R_1, T)
                 R_1 -= chemical_potential * delta_1
-                R_2 -= chemical_potential * delta_2
+                if self.T_2_flag:
+                    R_2 -= chemical_potential * delta_2
 
             if self.partial_trace_condition_flag:
                 trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
                 langrange_multiplier, delta_1, delta_2 = self._constraint_partial_trace(R_2, T)
                 R_1 -= langrange_multiplier * delta_1
-                R_2 -= langrange_multiplier * delta_2
-
-            # update one electron Hamiltonian
-            if self.chemical_potential_flag:
-                self._update_one_body_V(chemical_potential)
+                if self.T_2_flag:
+                    R_2 -= langrange_multiplier * delta_2
 
             # update CC amplitude
             if self.T_2_flag:
