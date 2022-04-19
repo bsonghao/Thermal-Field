@@ -224,6 +224,7 @@ class two_body_model():
         def Partition_Hamiltonian(density_matrix):
             """partition the Hamiltonian into a mean part + perturbation part"""
             # determine the constant term in the normal ordering based on thermal field reference state
+            # density matrix in represented in spin orbitals so the 1/2 factor cancels
             self.E_0 = np.trace(np.dot((self.H_core + self.F_physical), density_matrix))
             print("constant term:{:}".format(self.E_0))
 
@@ -605,10 +606,10 @@ class two_body_model():
             for q in range(self.M):
                 for r in range(self.M):
                     for s in range(self.M):
-                        if DM_flag:
-                            exponential_factor = self.F_physical[p, p] + self.F_physical[q, q] - self.F_physical[r, r] - self.F_physical[s, s]
+                        if not DM_flag:
+                            exponential_factor = self.F_physical[p, p] - self.F_physical[q, q] + self.F_physical[r, r] - self.F_physical[s, s]
                         else:
-                            exponential_factor = -self.F_physical[p, p] - self.F_physical[q, q] + self.F_physical[r, r] + self.F_physical[s, s]
+                            exponential_factor = -self.F_physical[p, p] + self.F_physical[q, q] - self.F_physical[r, r] + self.F_physical[s, s]
                         U[p, q, r, s] = np.exp(tau * exponential_factor)
         return U
 
@@ -637,7 +638,7 @@ class two_body_model():
 
     def _cal_2_RDM_inter_pic(self, U, C_1, T):
         """calculate 1-RDM in interaction picture"""
-        RDM_2 = np.einsum('pr,qs->pqrs', C_1, C_1)
+        RDM_2 = 2 * np.einsum('pr,qs->pqrs', C_1, C_1)
         RDM_2 -= np.einsum('ps,qr->pqrs', C_1, C_1)
         RDM_2 += np.einsum('r,s,p,q,rspq->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T['t_2'])
 
@@ -677,11 +678,11 @@ class two_body_model():
         # imaginary propagation
         for i in range(N):
             # calculate tranformation matrix for interaction picture
-            U_one_body_H = self._cal_one_body_inter_pic_transformation_matrix(beta_tmp, DM_flag=True)
-            U_one_body_DM = self._cal_one_body_inter_pic_transformation_matrix(beta_tmp, DM_flag=False)
+            U_one_body_H = self._cal_one_body_inter_pic_transformation_matrix(beta_tmp, DM_flag=False)
+            U_one_body_DM = self._cal_one_body_inter_pic_transformation_matrix(beta_tmp, DM_flag=True)
 
-            U_two_body_H = self._cal_two_body_inter_pic_transformation_matrix(beta_tmp, DM_flag=True)
-            U_two_body_DM = self._cal_two_body_inter_pic_transformation_matrix(beta_tmp, DM_flag=False)
+            U_two_body_H = self._cal_two_body_inter_pic_transformation_matrix(beta_tmp, DM_flag=False)
+            U_two_body_DM = self._cal_two_body_inter_pic_transformation_matrix(beta_tmp, DM_flag=True)
 
             # transform perturbation Hamiltonian to interaction picture
             V_I_one_body = self._transform_one_body_V_to_inter_pic(U_one_body_H)
