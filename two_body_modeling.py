@@ -251,7 +251,7 @@ class two_body_model():
             """map T_2 amplitude from symmetrized RDM_1 and RDM_1"""
             T_2 = np.zeros_like(RDM_2)
             T_2 += RDM_2
-            T_2 -= np.einsum('pr,qs->pqrs', RDM_1, RDM_1)
+            T_2 -= 2 * np.einsum('pr,qs->pqrs', RDM_1, RDM_1)
             T_2 += np.einsum('ps,qr->pqrs', RDM_1, RDM_1)
             T_2 /= np.einsum('r,s,p,q->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta)
             return T_2
@@ -513,6 +513,20 @@ class two_body_model():
 
         return langrange_multiplier, delta_1, delta_2
 
+    def Cal_1_RDM(self, T):
+        """calulate one body reduced density matrix from T ampliutude"""
+        RDM_1 = np.einsum('p,q,pq->pq', self.sin_theta, self.sin_theta, np.eye(self.M))
+        RDM_1 += np.einsum('q,p,qp->pq', self.cos_theta, self.sin_theta, T['t_1'])
+
+        return RDM_1
+
+    def Cal_2_RDM(self, RDM_1, T):
+        """calulate two body reduced density matrix from T ampliutude"""
+        RDM_2 =  2 * np.einsum('pr,qs->pqrs', RDM_1, RDM_1)
+        RDM_2 -= np.einsum('ps,qr->pqrs', RDM_1, RDM_1)
+        RDM_2 += np.einsum('r,s,p,q,rspq->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T['t_2'])
+        return RDM_2
+
     def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties"""
         # map initial T amplitude from reduced density matrix at zero beta
@@ -598,12 +612,9 @@ class two_body_model():
             # compute RDM
 
             # 1-RDM
-            RDM_1 = np.einsum('p,q,pq->pq', self.sin_theta, self.sin_theta, np.eye(self.M)) +\
-                    np.einsum('q,p,qp->pq', self.cos_theta, self.sin_theta, T['t_1'])
+            RDM_1 = self.Cal_1_RDM(T)
             # 2-RDM (chemist's notation)
-            RDM_2 = np.einsum('pr,qs->pqrs', RDM_1, RDM_1)
-            RDM_2 -= np.einsum('ps,qr->pqrs', RDM_1, RDM_1)
-            RDM_2 += np.einsum('r,s,p,q,rspq->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T['t_2'])
+            RDM_2 = self.Cal_2_RDM(RDM_1, T)
 
             # symmetrize density matrix and T amplitude
             RDM_1_sym, RDM_2_sym, T_1_sym, T_2_sym = self._symmetrize_density_matrix(RDM_1, RDM_2)
