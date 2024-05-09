@@ -677,7 +677,7 @@ class two_body_model():
                     print("occupation number:\n{:}".format(occupation_number_correct))
                 else:
                     occupation_number, natural_orbital = np.linalg.eig(RDM_1)
-                    occupation_number_correct = occupation_number.real
+                    occupation_number_correct = np.sort(occupation_number.real)
                     print("occupation number:\n{:}".format(occupation_number_correct))
 
                 print("thermal internal energy:{:.3f}".format(E))
