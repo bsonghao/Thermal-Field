@@ -3,7 +3,7 @@ from pyscf import gto, scf, ao2mo, mcscf
 import numpy as np
 from two_body_modeling import two_body_model
 import itertools as it
-
+import os
 
 def extract_Hamiltonian_parameters(mo_flag, CAS_SCF, mol_HF):
     """
@@ -158,29 +158,29 @@ def main():
 
     O2 = 'O 0 0 0; O 0 0 1.2'
 
-    N2 = 'N 0 0 0; N 0 0 2.0'
+    N2 = 'N 0 0 0; N 0 0 1.1'
 
     # active space of molecules
     CAS_N2 = (6, 6)
     CAS_HF = (4, 6)
     CAS_O2 = (8, 6)
 
-    atom = HF
-    molecule = "HF"
+    atom = O2
+    molecule = "O2"
 
     # setup model input using gaussian-type-orbitals
     molecular_HF = gto.M(
            atom=atom,  # in Angstrom
            basis='ccpvdz',
            # basis="6-31g",
-           symmetry=True,
-           spin=0
+           symmetry=False,
+           spin=2
     )
 
     # run HF calculation
     mean_field = scf.RHF(molecular_HF).run()
     # 6 orbital, 6 electrons
-    mycas = mean_field.CASSCF(CAS_HF[0], CAS_HF[1])
+    mycas = mean_field.CASSCF(CAS_O2[0], CAS_O2[1])
     mycas.natorb = True
     # Here mycas.mo_coeff are natural orbitals because .natorb is on.
     # Note The active space orbitals have the same symmetry as the input HF
@@ -188,6 +188,7 @@ def main():
     # The mcscf active orbitals are sorted only within each irreps.
     mycas.kernel()
 
+    os._exit(0)
     # extract parameter from the input Hamitonian and CAS-SCF calculation
     h_core, eri_integral, Fock_ground_state, E_core = \
     extract_Hamiltonian_parameters(mo_flag, mycas, molecular_HF)
@@ -208,14 +209,14 @@ def main():
     NR_energy = mycas.energy_nuc()
 
     # run TFCC & thermal NOE calculation
-    model = two_body_model(E_core, h_core, Fock_ground_state, eri_integral, nof_electron, molecule=molecule,
-                       E_NN=NR_energy, T_2_flag=False, chemical_potential=True, partial_trace_condition=True)
+    model = two_body_model(molecule, E_core, h_core, Fock_ground_state, eri_integral, nof_electron, molecule=molecule,
+                       E_NN=NR_energy, T_2_flag=True, chemical_potential=False, partial_trace_condition=False)
     # thermal field transform
     model.thermal_field_transform(T=1e8)
     # TFCC imaginary time integration
-    model.TFCC_integration(T_final=2e3, N=10000, direct_flag=True, exchange_flag=True)
+    model.TFCC_integration(T_final=2e3, N=10000, direct_flag=False, exchange_flag=False, constraint_flag=False)
     # plot thermal properties
-    model.Plot_thermal()
+    # model.Plot_thermal()
 
     return
 

@@ -12,8 +12,9 @@ class two_body_model():
     """ Define a object that implement thermal field coupled_cluster
         method and thermal NOE method
         for GS and thermal property calculations for two-electron Hamiltonian """
-    def __init__(self, E_core, H_core, Fock, V_eri, n_occ, molecule, E_NN, T_2_flag=True, chemical_potential=True, partial_trace_condition=True):
+    def __init__(self, name, E_core, H_core, Fock, V_eri, n_occ, molecule, E_NN, T_2_flag=True, chemical_potential=True, partial_trace_condition=True):
         """
+        name: name of the molecule
         E_core: core electron contribution of the Hamiltonian
         Fock: ground_state_Fock_matrix
         H_core: core electron Hamiltonian
@@ -28,6 +29,7 @@ class two_body_model():
         (all electron integrals are represented in MO basis)
         """
         print("***<start of input parameters>***")
+        self.name = name
         self.E_core = E_core
         self.V = V_eri
         self.n_occ = n_occ
@@ -518,7 +520,7 @@ class two_body_model():
 
         return langrange_multiplier, delta_1, delta_2
 
-    def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True):
+    def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True, constraint_flag=True):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties"""
         # map initial T amplitude from reduced density matrix at zero beta
         ## 1-RDM
@@ -615,13 +617,16 @@ class two_body_model():
             RDM_2 += np.einsum('r,s,p,q,rspq->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T['t_2'])
 
             # symmetrize density matrix and T amplitude
-            RDM_1_sym, RDM_2_sym, T_1_sym, T_2_sym = self._symmetrize_density_matrix(RDM_1, RDM_2)
-            if self.T_2_flag:
-                T['t_2'] = T_2_sym
+            if constraint_flag:
+                RDM_1_sym, RDM_2_sym, T_1_sym, T_2_sym = self._symmetrize_density_matrix(RDM_1, RDM_2)
+                if self.T_2_flag:
+                    T['t_2'] = T_2_sym
 
-            # correct the occupation number
-            occupation_number_correct, RDM_1_correct, T_1_correct = self._correct_occupation_number(RDM_1_sym)
-            T['t_1'] = T_1_correct
+                # correct the occupation number
+                occupation_number_correct, RDM_1_correct, T_1_correct = self._correct_occupation_number(RDM_1_sym)
+                T['t_1'] = T_1_correct
+            else:
+                pass
 
             if direct_flag:
                 # correct direct two body density matrix
@@ -641,21 +646,34 @@ class two_body_model():
             # check N representability condition
             P_cumulant, Q_cumulant, G_cumulant = self._check_P_Q_G_condition(RDM_1, T['t_2'])
             # number of electron
-            n_el = sum(occupation_number_correct)
+            if constraint_flag:
+                n_el = np.trace(RDM_1_correct)
+            else:
+                n_el = np.trace(RDM_1)
             # check trace condition
             trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
 
             # print and store properties along the propagation
             if i != 0:
                 print("Temperature: {:.3f} K".format(1. / (self.kb * beta_tmp)))
-                print("max 1-RDM:\n{:.3f}".format(abs(RDM_1_correct).max()))
-                print("max 2-RDM:\n{:.3f}".format(abs(RDM_2_sym).max()))
+                if constraint_flag:
+                    print("max 1-RDM:\n{:.3f}".format(abs(RDM_1_correct).max()))
+                    print("max 2-RDM:\n{:.3f}".format(abs(RDM_2_sym).max()))
+                else:
+                    print("max 1-RDM:\n{:.3f}".format(abs(RDM_1).max()))
+                    print("max 2-RDM:\n{:.3f}".format(abs(RDM_2).max()))
                 print("number of electron:{:.3f}".format(n_el))
                 if self.chemical_potential:
                     print("chemical potential:{:} cm-1".format(mu))
                 if self.partial_trace_condition:
                     print("langrange multilpier for partial trace constraint:{:} cm-1".format(langrange_multiplier))
-                print("occupation number:\n{:}".format(occupation_number_correct))
+                if constraint_flag:
+                    print("occupation number:\n{:}".format(occupation_number_correct))
+                else:
+                    n_occ, orb = np.linalg.eig(RDM_1)
+                    occupation_number_correct = np.sort(n_occ.real)
+                    print("occupation number:\n{:}".format(occupation_number_correct))
+
                 print("thermal internal energy:{:.3f}".format(E))
                 print("*** N representability condition")
                 print("P condition:{:.5f}".format(P_cumulant.min()))
@@ -698,15 +716,23 @@ class two_body_model():
         # store plot for trace condition
         df = pd.DataFrame(self.trace_condition)
         if self.T_2_flag:
-            df.to_csv("trace_condition_TFCC_CCSD_sym.csv", index=False)
+            if constraint_flag:
+                df.to_csv("{:}_trace_condition_TFCC_CCSD_sym_cons.csv".format(self.name), index=False)
+            else:
+                df.to_csv("{:}_trace_condition_TFCC_CCSD_sym_nocons.csv".format(self.name), index=False)
+
         else:
-            df.to_csv("trace_condition_TFCC_CCS_sym.csv", index=False)
+            df.to_csv("{:}_trace_condition_TFCC_CCS_sym.csv".format(self.name), index=False)
         # store plot for P Q G condition
         df = pd.DataFrame(self.P_Q_G_condition)
         if self.T_2_flag:
-            df.to_csv("P_Q_G_condition_TFCC_CCSD_sym.csv", index=False)
+            if constraint_flag:
+                df.to_csv("{:}_P_Q_G_condition_TFCC_CCSD_sym_cons.csv".format(self.name), index=False)
+            else:
+                df.to_csv("{:}_P_Q_G_condition_TFCC_CCSD_sym_nocons.csv".format(self.name), index=False)
+
         else:
-            df.to_csv("P_Q_G_condition_TFCC_CCS_sym.csv", index=False)
+            df.to_csv("{:}_P_Q_G_condition_TFCC_CCS_sym.csv".format(self.name), index=False)
 
 
         # store thermal property data
@@ -715,9 +741,13 @@ class two_body_model():
 
         df = pd.DataFrame(thermal_prop)
         if self.T_2_flag:
-            df.to_csv("thermal_properties_TFCC_CCSD_sym.csv", index=False)
+            if constraint_flag:
+                df.to_csv("{:}_thermal_properties_TFCC_CCSD_sym_cons.csv".format(self.name), index=False)
+            else:
+                df.to_csv("{:}_thermal_properties_TFCC_CCSD_sym_nocons.csv".format(self.name), index=False)
+
         else:
-            df.to_csv("thermal_properties_TFCC_CCS_sym.csv", index=False)
+            df.to_csv("{:}_thermal_properties_TFCC_CCS_sym.csv".format(self.name), index=False)
 
         # store occupation number data (from CC)
         occ_dic = {"T": self.T_grid}
@@ -729,9 +759,13 @@ class two_body_model():
 
         df = pd.DataFrame(occ_dic)
         if self.T_2_flag:
-            df.to_csv("occupation_number_TFCC_CCSD_sym.csv")
+            if constraint_flag:
+                df.to_csv("{:}_occupation_number_TFCC_CCSD_sym_cons.csv".format(self.name), index=False)
+            else:
+                df.to_csv("{:}_occupation_number_TFCC_CCSD_sym_nocons.csv".format(self.name), index=False)
+
         else:
-            df.to_csv("occupation_number_TFCC_CCS_sym.csv", index=False)
+            df.to_csv("{:}_occupation_number_TFCC_CCS_sym.csv".format(self.name), index=False)
         return
 
     def Plot_thermal(self, compare=False):
