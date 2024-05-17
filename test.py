@@ -188,7 +188,7 @@ def main():
     # The mcscf active orbitals are sorted only within each irreps.
     mycas.kernel()
 
-    os._exit(0)
+    # os._exit(0)
     # extract parameter from the input Hamitonian and CAS-SCF calculation
     h_core, eri_integral, Fock_ground_state, E_core = \
     extract_Hamiltonian_parameters(mo_flag, mycas, molecular_HF)
@@ -214,7 +214,7 @@ def main():
     # thermal field transform
     model.thermal_field_transform(T=1e8)
     # TFCC imaginary time integration
-    model.TFCC_integration(T_final=2e3, N=10000, direct_flag=False, exchange_flag=False, constraint_flag=False)
+    model.TFCC_integration(T_final=2e3, N=10000, direct_flag=True, exchange_flag=True, constraint_flag=True)
     # plot thermal properties
     # model.Plot_thermal()
 
