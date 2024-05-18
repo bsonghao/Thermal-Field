@@ -6,6 +6,8 @@ from math import factorial, isclose
 from scipy.linalg import eigh
 from CC_residue import *
 import itertools as it
+from pyscf import ao2mo
+
 
 
 class two_body_model():
@@ -309,44 +311,51 @@ class two_body_model():
 
     def _calculate_two_body_direct_cumulant(self, T_2):
         """calculate diagonal two-body cumulant from T_2 amplitude"""
-        C_2_direct = np.einsum('p,q,p,q,ppqq->pq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
+        C_2_direct = np.einsum('p,p,q,q,ppqq->pq', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta, T_2)
         return C_2_direct
 
     def _calculate_two_body_exchange_cumulant(self, T_2):
         """calculate exchange two-body cumulant from T_2 amplitude"""
-        C_2_exchange = np.einsum('p,q,p,q,pqqp->pq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
+        C_2_exchange = np.einsum('p,q,q,q,pqqp->pq', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta, T_2)
         return C_2_exchange
 
-    def _calculate_P_cumulant(self, RDM_1, C_2):
+    def _calculate_P_cumulant(self, RDM_1, C_2_direct, C_2_exchange):
         """calulate P cumulant from 1-RDM and 2-body cumulant"""
-        P_cumulant = C_2 + np.einsum('pp,qq->pq', RDM_1, RDM_1)
-        return P_cumulant
+        P_cumulant_alpha_beta = C_2_direct + np.einsum('pp,qq->pq', RDM_1, RDM_1)
+        P_cumulant_alpha_alpha = P_cumulant_alpha_beta - C_2_exchange -  np.einsum('pq,qp->pq', RDM_1, RDM_1)
 
-    def _calculate_Q_cumulant(self, RDM_1, C_2):
+        return P_cumulant_alpha_beta, P_cumulant_alpha_alpha
+
+    def _calculate_Q_cumulant(self, RDM_1, C_2_direct, C_2_exchange):
         """calulate Q cumulant from 1-RDM and 2-body cumulant"""
         one_sub_RDM_1 = np.eye(self.M) - RDM_1
-        Q_cumulant = C_2 + np.einsum('pp,qq->pq', one_sub_RDM_1, one_sub_RDM_1)
-        return Q_cumulant
+        Q_cumulant_alpha_beta = C_2_direct + np.einsum('pp,qq->pq', one_sub_RDM_1, one_sub_RDM_1)
+        Q_cumulant_alpha_alpha = Q_cumulant_alpha_beta - C_2_exchange - np.einsum('pq,qp->pq', one_sub_RDM_1, one_sub_RDM_1)
 
-    def _calculate_G_cumulant(self, RDM_1, C_2):
+        return Q_cumulant_alpha_beta, Q_cumulant_alpha_alpha
+
+    def _calculate_G_cumulant(self, RDM_1, C_2_direct, C_2_exchange):
         """calulate G cumulant from 1-RDM and 2-body cumulant"""
         one_sub_RDM_1 = np.eye(self.M) - RDM_1
-        G_cumulant = -C_2 + np.einsum('pp,qq->pq', RDM_1, one_sub_RDM_1)
-        return G_cumulant
+        G_cumulant_alpha_beta = -C_2_direct + np.einsum('pp,qq->pq', RDM_1, one_sub_RDM_1)
+        G_cumulant_alpha_alpha = G_cumulant_alpha_beta + C_2_exchange - np.einsum('pq,qp->pq', RDM_1, one_sub_RDM_1)
+
+        return G_cumulant_alpha_beta, G_cumulant_alpha_alpha
 
     def _check_P_Q_G_condition(self, RDM_1, T_2):
         """exam N-representability condition P, Q, G"""
         # calucate diagonal two body cumulant
-        C_2 = self._calculate_two_body_direct_cumulant(T_2)
+        C_2_direct = self._calculate_two_body_direct_cumulant(T_2)
+        C_2_exchange = self._calculate_two_body_exchange_cumulant(T_2)
 
         # calculate P cumulant
-        P_cumulant = self._calculate_P_cumulant(RDM_1, C_2)
+        P_cumulant_alpha_beta, P_cumulant_alpha_alpha = self._calculate_P_cumulant(RDM_1, C_2_direct, C_2_exchange)
 
         # calculate Q cumulant
-        Q_cumulant = self._calculate_Q_cumulant(RDM_1, C_2)
+        Q_cumulant_alpha_beta, Q_cumulant_alpha_alpha = self._calculate_Q_cumulant(RDM_1, C_2_direct, C_2_exchange)
 
         # calculate G cumulant
-        G_cumulant = self._calculate_G_cumulant(RDM_1, C_2)
+        G_cumulant_alpha_beta, G_cumulant_alpha_alpha = self._calculate_G_cumulant(RDM_1, C_2_direct, C_2_exchange)
 
         # exam P condition
         # assert P_cumulant.min() > 0
@@ -357,7 +366,7 @@ class two_body_model():
         # exam G condition
         # assert G_cumulant.min() > 0
 
-        return P_cumulant, Q_cumulant, G_cumulant
+        return P_cumulant_alpha_beta, P_cumulant_alpha_alpha, Q_cumulant_alpha_beta, Q_cumulant_alpha_alpha, G_cumulant_alpha_beta, G_cumulant_alpha_alpha
 
     def _correct_two_body_density_matrix(self, RDM_1, T_2):
         """implement correction to 2-RDM that satisfy N-representability condition"""
@@ -379,12 +388,18 @@ class two_body_model():
 
             return lower_bound
 
+        # transform cumulants in natural orbital basis
+        n, v = np.linalg.eigh(RDM_1)
+
         # evaluate n_p and 1 - n_p
-        diag_1_RDM = np.diag(RDM_1)
+        diag_1_RDM = n
         diag_1_RDM_bar = np.ones_like(diag_1_RDM) - diag_1_RDM
 
         # evaluate two body cumulant
         C_2 = self._calculate_two_body_direct_cumulant(T_2)
+
+        # transform to natural orbital basis
+        C_2_norb = np.einsum('lp,lk,kq->pq', v, C_2, v)
 
         # evaulate lower bound
         lower_bound = cal_lower_bound(diag_1_RDM, diag_1_RDM_bar)
@@ -394,90 +409,91 @@ class two_body_model():
 
         # correct two body cumulant if it exceed the physical boundary
         for p, q in it.product(range(self.M), repeat=2):
-            if C_2[p, q] > upper_bound[p, q]:
-                C_2[p, q] = upper_bound[p, q]
-            elif C_2[p, q] < lower_bound[p, q]:
-                C_2[p, q] = lower_bound[p, q]
+            if C_2_norb[p, q] > upper_bound[p, q]:
+                C_2_norb[p, q] = upper_bound[p, q]
+            elif C_2_norb[p, q] < lower_bound[p, q]:
+                C_2_norb[p, q] = lower_bound[p, q]
             else:
                 pass
 
+        # inverse transform to the MO basis
+        C_2_new = np.einsum('pl,lk,qk->pq', v, C_2_norb, v)
         # map matrix element of C_2 to T_2
-        T_2_correct = C_2 / np.einsum('p,q,p,q->pq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta)
+        T_2_correct = C_2_new / np.einsum('p,p,q,q->pq', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta)
 
         return T_2_correct
 
     def _correct_exchange_two_body_cumulant(self, RDM_1, T_2):
         """correct exchange part of the two body cumulant when it exceed the physical boundary"""
-        def cal_upper_bound(C_2_direct, C_2_exchange, RDM_1):
+        def cal_upper_bound():
             """calculate upper bound of the exchange cumulant"""
-            def cal_exchange_part_of_upper_bound(C_2_direct, C_2_exchange, RDM_1):
-                """calculate exchange part of upper bound by looping over internal label q"""
-                upper_bound_exchange = np.zeros([self.M, self.M])
-                # find min diagonal element of 1-RDM
-                min_1_RDM = min(np.diag(RDM_1))
-                # find min element of direct two body cumulant
-                min_C_2_direct = np.zeros(self.M)
-                for p in range(self.M):
-                    min_C_2_direct[p] = min(C_2_direct[p, :])
-
-                for p, r in it.product(range(self.M), repeat=2):
-                    upper_bound_exchange[p, r] += min_1_RDM
-                    upper_bound_exchange[p, r] -= min_C_2_direct[p]
-                    upper_bound_exchange[p, r] -= min_C_2_direct[r]
-                    upper_bound_exchange[p, r] -= min_1_RDM * RDM_1[r, r]
-                    upper_bound_exchange[p, r] -= RDM_1[r, r] * RDM_1[p, p]
-
-                return upper_bound_exchange
-
             upper_bound = np.zeros([self.M, self.M])
-            upper_bound += C_2_direct
-            upper_bound += np.einsum('pp,rr->pr', RDM_1, RDM_1)
-            upper_bound -= np.einsum('pr,rp->pr', RDM_1, RDM_1)
+            upper_bound += C_2_direct_norb
 
-            # calculate exchange part of the upper bound
-            upper_bound_exchange = cal_exchange_part_of_upper_bound(C_2_direct, C_2_exchange, RDM_1)
-            upper_bound += upper_bound_exchange
+            # min of the two matrices
+            X = np.einsum('pp,qq->pq', d_1, d_1) - np.einsum('pq,qp->pq', d_1, d_1)
+            Y = np.einsum('pp,qq->pq', d_1_bar, d_1_bar) - np.einsum('pq,qp->pq', d_1_bar, d_1_bar)
+
+            upper_bound += np.minimum(X, Y)
+
 
             return upper_bound
 
-        def cal_lower_bound(C_2_direct, C_2_exchange, RDM_1):
+        def cal_lower_bound():
             """calculate lower bound of the exchange cumulant"""
             lower_bound = np.zeros([self.M, self.M])
-            lower_bound += C_2_direct
-            lower_bound += np.einsum('pp,rr->pr', RDM_1, RDM_1)
-            lower_bound -= np.einsum('pr,rp->pr', RDM_1, RDM_1)
+            lower_bound += C_2_direct_norb
+            lower_bound -= np.einsum('pp,qq->pq', d_1, d_1_bar)
+            # lower_bound += np.einsum('pq,qp->pq', d_1, d_1_bar)
 
-            for p, r in it.product(range(self.M), repeat=2):
-                lower_bound[p, r] -= min(RDM_1[p, p], RDM_1[r, r])
+            X = np.einsum('pq,qp->pq', d_1_bar, d_1)
+            Y = np.einsum('pq,qp->pq', d_1, d_1_bar)
+            lower_bound += np.maximum(X, Y)
 
             return lower_bound
+
+
 
         # calculate two body cumulant
         C_2_direct = self._calculate_two_body_direct_cumulant(T_2)
         C_2_exchange = self._calculate_two_body_exchange_cumulant(T_2)
 
+        # transform cumulants in natural orbital basis
+        n, v = np.linalg.eigh(RDM_1)
+        C_2_direct_norb = np.einsum('lp,lk,kq->pq', v, C_2_direct, v)
+        C_2_exchange_norb = np.einsum('lp,lk,kq->pq', v, C_2_exchange, v)
+
+
+        d_1 = np.diag(n)
+        d_1_bar = np.eye(self.M) - d_1
+
         # calculate upper bound
-        upper_bound = cal_upper_bound(C_2_direct, C_2_exchange, RDM_1)
+        upper_bound = cal_upper_bound()
 
         # calculate lower bound
-        lower_bound = cal_lower_bound(C_2_direct, C_2_exchange, RDM_1)
+        lower_bound = cal_lower_bound()
 
         # set constraint on two body exchange cumulant when it exceed the physical boundary
         for p, r in it.product(range(self.M), repeat=2):
             if p != r:
-                if C_2_exchange[p, r] > upper_bound[p, r]:
-                    C_2_exchange[p, r] = upper_bound[p, r]
-                elif C_2_exchange[p, r] < lower_bound[p, r]:
-                    C_2_exchange[p, r] = lower_bound[p, r]
+                if C_2_exchange_norb[p, r] > upper_bound[p, r]:
+                    C_2_exchange_norb[p, r] = upper_bound[p, r]
+                elif C_2_exchange_norb[p, r] < lower_bound[p, r]:
+                    C_2_exchange_norb[p, r] = lower_bound[p, r]
                 else:
                     pass
             else:
                 pass
 
+        # print((-C_2_direct_norb + np.einsum('pp,qq->pq', d_1, d_1_bar) + C_2_exchange_norb - np.einsum('pq,qp->pq', d_1, d_1_bar)).min())
+        # inverse transform to the MO basis
+        C_2_exchange_new = np.einsum('pl,lk,qk->pq', v, C_2_exchange_norb, v)
+
         # reverse map C_2_exchange to T_2
-        T_2_exchange = C_2_exchange / np.einsum('p,r,r,p->pr', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta)
+        T_2_exchange = C_2_exchange_new / np.einsum('p,q,q,p->pq', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta)
 
         return T_2_exchange
+
 
     def _calculate_chemical_potential(self, R_1, T):
         """calculate chemical potential to fix total number of electrons"""
@@ -529,6 +545,27 @@ class two_body_model():
         RDM_2 += np.einsum('r,s,p,q,rspq->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T['t_2'])
         return RDM_2
 
+    def correct_C2(self, C2, RDM_1, T2):
+        """turn C2 to bo zero is n_p is zero"""
+        # cal natural orbitals
+        n, v = np.linalg.eigh(RDM_1)
+        # transform C2 to nature orbital basis
+        C2_norb = ao2mo.incore.full(C2, v)
+
+        for p,q,r,s in it.product(range(self.M), repeat=4):
+            if np.allclose(n[p]*n[q]*n[r]*n[s], 0.0) or np.allclose(n[p]*n[q]*n[r]*n[s], 1.0):
+                C2_norb[p,q,r,s] = 0
+        # inverse transform to MO basis
+        C2_new = ao2mo.incore.full(C2, v.transpose())
+        # map to T2
+        T2_new = C2_new / np.einsum('r,s,p,q->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta)
+
+        return T2_new
+
+
+
+
+
     def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True, constraint_flag=True):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties"""
         if constraint_flag:
@@ -572,7 +609,8 @@ class two_body_model():
         self.mu_th = []
         self.occ = []
         # initial P, Q, G plots
-        self.P_Q_G_condition = {"T(K)": self.T_grid, "P": [], "Q": [], "G": []}
+        self.P_Q_G_condition_alpha_beta = {"T(K)": self.T_grid, "P": [], "Q": [], "G": []}
+        self.P_Q_G_condition_alpha_alpha = {"T(K)": self.T_grid, "P": [], "Q": [], "G": []}
 
         # initial trace residue plot
         self.trace_condition = {"T(K)": self.T_grid, "R": []}
@@ -630,18 +668,22 @@ class two_body_model():
                 # correct the occupation number
                 occupation_number_correct, RDM_1_correct, T_1_correct = self._correct_occupation_number(RDM_1_sym)
                 T['t_1'] = T_1_correct
+
+                # turn two body cumulant to be zero if any of p, q, r, s is 1 or 0
+                # C2 = self._calculate_full_two_body_cumulant(T["t_2"])
+                # T['t_2'] = self.correct_C2(C2, RDM_1_correct, T["t_2"])
             else:
                 pass
 
             if direct_flag:
                 # correct direct two body density matrix
-                T_2_correct_direct = self._correct_two_body_density_matrix(RDM_1, T['t_2'])
+                T_2_correct_direct = self._correct_two_body_density_matrix(RDM_1_correct, T['t_2'])
                 for p, q in it.product(range(self.M), repeat=2):
                     T['t_2'][p, p, q, q] = T_2_correct_direct[p, q]
 
             if exchange_flag:
                 # correct exchange two body density matrix
-                T_2_correct_exchange = self._correct_exchange_two_body_cumulant(RDM_1, T['t_2'])
+                T_2_correct_exchange = self._correct_exchange_two_body_cumulant(RDM_1_correct, T['t_2'])
                 for p, q in it.product(range(self.M), repeat=2):
                     if p != q:
                         T['t_2'][p, q, q, p] = T_2_correct_exchange[p, q]
@@ -649,7 +691,8 @@ class two_body_model():
                         pass
 
             # check N representability condition
-            P_cumulant, Q_cumulant, G_cumulant = self._check_P_Q_G_condition(RDM_1, T['t_2'])
+            P_cumulant_alpha_beta, P_cumulant_alpha_alpha, Q_cumulant_alpha_beta, Q_cumulant_alpha_alpha, G_cumulant_alpha_beta, G_cumulant_alpha_alpha = \
+            self._check_P_Q_G_condition(RDM_1, T['t_2'])
             # number of electron
             if constraint_flag:
                 n_el = np.trace(RDM_1_correct)
@@ -682,9 +725,9 @@ class two_body_model():
 
                 print("thermal internal energy:{:.3f}".format(E))
                 print("*** N representability condition")
-                print("P condition:{:.5f}".format(P_cumulant.min()))
-                print("Q condition:{:.5f}".format(Q_cumulant.min()))
-                print("G condition:{:.5f}".format(G_cumulant.min()))
+                # print("P condition:{:.5f}".format(P_cumulant.min()))
+                # print("Q condition:{:.5f}".format(Q_cumulant.min()))
+                # print("G condition:{:.5f}".format(G_cumulant.min()))
                 print("Trace condition:")
                 print("trace of two body density matrix:{:.5f}".format(np.einsum('pppp->', RDM_2)))
                 print("trace of two body cumulant residue:{:.5f}".format(np.trace(trace_residue)))
@@ -704,9 +747,14 @@ class two_body_model():
                 self.occ.append(occupation_number_correct)
 
                 # store data for P Q G condition
-                self.P_Q_G_condition['P'].append(P_cumulant.min())
-                self.P_Q_G_condition['Q'].append(Q_cumulant.min())
-                self.P_Q_G_condition['G'].append(G_cumulant.min())
+                self.P_Q_G_condition_alpha_beta['P'].append(P_cumulant_alpha_beta.min())
+                self.P_Q_G_condition_alpha_beta['Q'].append(Q_cumulant_alpha_beta.min())
+                self.P_Q_G_condition_alpha_beta['G'].append(G_cumulant_alpha_beta.min())
+
+                self.P_Q_G_condition_alpha_alpha['P'].append(P_cumulant_alpha_alpha.min())
+                self.P_Q_G_condition_alpha_alpha['Q'].append(Q_cumulant_alpha_alpha.min())
+                self.P_Q_G_condition_alpha_alpha['G'].append(G_cumulant_alpha_alpha.min())
+
 
                 # store data for trace residue
                 self.trace_condition['R'].append(np.trace(trace_residue))
@@ -720,11 +768,18 @@ class two_body_model():
         else:
             df.to_csv("trace_condition_TFCC_CCS_sym.csv", index=False)
         # store plot for P Q G condition
-        df = pd.DataFrame(self.P_Q_G_condition)
+        df = pd.DataFrame(self.P_Q_G_condition_alpha_beta)
         if self.T_2_flag:
-            df.to_csv("{:}_P_Q_G_condition_TFCC_CCSD_sym_{:}.csv".format(self.name, string), index=False)
+            df.to_csv("{:}_P_Q_G_condition_alpha_beta_TFCC_CCSD_sym_{:}.csv".format(self.name, string), index=False)
         else:
-            df.to_csv("{:}_P_Q_G_condition_TFCC_CCS_sym_{:}.csv".format(self.name, string), index=False)
+            df.to_csv("{:}_P_Q_G_condition_alpha_beta_TFCC_CCS_sym_{:}.csv".format(self.name, string), index=False)
+        # store plot for P Q G condition
+        df = pd.DataFrame(self.P_Q_G_condition_alpha_alpha)
+        if self.T_2_flag:
+            df.to_csv("{:}_P_Q_G_condition_alpha_alpha_TFCC_CCSD_sym_{:}.csv".format(self.name, string), index=False)
+        else:
+            df.to_csv("{:}_P_Q_G_condition_alpha_alpha_TFCC_CCS_sym_{:}.csv".format(self.name, string), index=False)
+
 
 
         # store thermal property data
