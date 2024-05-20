@@ -314,12 +314,12 @@ class two_body_model():
 
     def _calculate_two_body_direct_cumulant(self, T_2):
         """calculate diagonal two-body cumulant from T_2 amplitude"""
-        C_2_direct = np.einsum('p,q,p,q,ppqq->pq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
+        C_2_direct = np.einsum('p,p,q,q,ppqq->pq', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta, T_2)
         return C_2_direct
 
     def _calculate_two_body_exchange_cumulant(self, T_2):
         """calculate exchange two-body cumulant from T_2 amplitude"""
-        C_2_exchange = np.einsum('p,q,p,q,pqqp->pq', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
+        C_2_exchange = np.einsum('p,q,q,p,pqqp->pq', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta, T_2)
         return C_2_exchange
 
     def _calculate_P_cumulant(self, RDM_1, C_2_direct, C_2_exchange):
@@ -346,7 +346,7 @@ class two_body_model():
         return G_cumulant_alpha_beta, G_cumulant_alpha_alpha
 
 
-   def _check_P_Q_G_condition(self, RDM_1, T_2):
+    def _check_P_Q_G_condition(self, RDM_1, T_2):
         """exam N-representability condition P, Q, G"""
         # calucate diagonal two body cumulant
         C_2_direct = self._calculate_two_body_direct_cumulant(T_2)
@@ -655,15 +655,15 @@ class two_body_model():
             else:
                 pass
 
-                if direct_flag:
+            if direct_flag:
                 # correct direct two body density matrix
-                T_2_correct_direct = self._correct_two_body_density_matrix(RDM_1_correct, T['t_2'], natural_orbital_flag=False)
+                T_2_correct_direct = self._correct_two_body_density_matrix(RDM_1_correct, T['t_2'], natural_orbital_flag=True)
                 for p, q in it.product(range(self.M), repeat=2):
                     T['t_2'][p, p, q, q] = T_2_correct_direct[p, q]
 
             if exchange_flag:
                 # correct exchange two body density matrix
-                T_2_correct_exchange = self._correct_exchange_two_body_cumulant(RDM_1_correct, T['t_2'], natural_orbital_flag=False)
+                T_2_correct_exchange = self._correct_exchange_two_body_cumulant(RDM_1_correct, T['t_2'], natural_orbital_flag=True)
                 for p, q in it.product(range(self.M), repeat=2):
                     if p != q:
                         T['t_2'][p, q, q, p] = T_2_correct_exchange[p, q]
@@ -705,9 +705,9 @@ class two_body_model():
 
                 print("thermal internal energy:{:.3f}".format(E))
                 print("*** N representability condition")
-                print("P condition:{:.5f}".format(P_cumulant.min()))
-                print("Q condition:{:.5f}".format(Q_cumulant.min()))
-                print("G condition:{:.5f}".format(G_cumulant.min()))
+                print("P condition:{:.5f}".format(P_cumulant_alpha_beta.min()))
+                print("Q condition:{:.5f}".format(Q_cumulant_alpha_beta.min()))
+                print("G condition:{:.5f}".format(G_cumulant_alpha_beta.min()))
                 print("Trace condition:")
                 print("trace of two body density matrix:{:.5f}".format(np.einsum('pppp->', RDM_2)))
                 print("trace of two body cumulant residue:{:.5f}".format(np.trace(trace_residue)))
