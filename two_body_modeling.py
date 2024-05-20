@@ -368,7 +368,7 @@ class two_body_model():
 
         return P_cumulant_alpha_beta, P_cumulant_alpha_alpha, Q_cumulant_alpha_beta, Q_cumulant_alpha_alpha, G_cumulant_alpha_beta, G_cumulant_alpha_alpha
 
-    def _correct_two_body_density_matrix(self, RDM_1, T_2):
+    def _correct_two_body_density_matrix(self, RDM_1, T_2, natural_orbital_flag=True):
         """implement correction to 2-RDM that satisfy N-representability condition"""
         def cal_upper_bound(diag_1_RDM, diag_1_RDM_bar):
             """calculate upper bound of two body cumulant"""
@@ -389,17 +389,22 @@ class two_body_model():
             return lower_bound
 
         # transform cumulants in natural orbital basis
-        n, v = np.linalg.eigh(RDM_1)
+        if natural_orbital_flag:
+            n, v = np.linalg.eigh(RDM_1)
+            diag_1_RDM = n
+        else:
+            diag_1_RDM = np.diag(RDM_1)
 
         # evaluate n_p and 1 - n_p
-        diag_1_RDM = n
+        # diag_1_RDM = np.diag(RDM_1)
         diag_1_RDM_bar = np.ones_like(diag_1_RDM) - diag_1_RDM
 
         # evaluate two body cumulant
         C_2 = self._calculate_two_body_direct_cumulant(T_2)
 
         # transform to natural orbital basis
-        C_2_norb = np.einsum('lp,lk,kq->pq', v, C_2, v)
+        if natural_orbital_flag:
+            C_2 = np.einsum('lp,lk,kq->pq', v, C_2, v)
 
         # evaulate lower bound
         lower_bound = cal_lower_bound(diag_1_RDM, diag_1_RDM_bar)
@@ -409,26 +414,27 @@ class two_body_model():
 
         # correct two body cumulant if it exceed the physical boundary
         for p, q in it.product(range(self.M), repeat=2):
-            if C_2_norb[p, q] > upper_bound[p, q]:
-                C_2_norb[p, q] = upper_bound[p, q]
-            elif C_2_norb[p, q] < lower_bound[p, q]:
-                C_2_norb[p, q] = lower_bound[p, q]
+            if C_2[p, q] > upper_bound[p, q]:
+                C_2[p, q] = upper_bound[p, q]
+            elif C_2[p, q] < lower_bound[p, q]:
+                C_2[p, q] = lower_bound[p, q]
             else:
                 pass
 
         # inverse transform to the MO basis
-        C_2_new = np.einsum('pl,lk,qk->pq', v, C_2_norb, v)
+        if natural_orbital_flag:
+            C_2 = np.einsum('pl,lk,qk->pq', v, C_2, v)
         # map matrix element of C_2 to T_2
-        T_2_correct = C_2_new / np.einsum('p,p,q,q->pq', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta)
+        T_2_correct = C_2 / np.einsum('p,p,q,q->pq', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta)
 
         return T_2_correct
 
-    def _correct_exchange_two_body_cumulant(self, RDM_1, T_2):
+    def _correct_exchange_two_body_cumulant(self, RDM_1, T_2, natural_orbital_flag=True):
         """correct exchange part of the two body cumulant when it exceed the physical boundary"""
         def cal_upper_bound():
             """calculate upper bound of the exchange cumulant"""
             upper_bound = np.zeros([self.M, self.M])
-            upper_bound += C_2_direct_norb
+            upper_bound += C_2_direct
 
             # min of the two matrices
             X = np.einsum('pp,qq->pq', d_1, d_1) - np.einsum('pq,qp->pq', d_1, d_1)
@@ -442,7 +448,7 @@ class two_body_model():
         def cal_lower_bound():
             """calculate lower bound of the exchange cumulant"""
             lower_bound = np.zeros([self.M, self.M])
-            lower_bound += C_2_direct_norb
+            lower_bound += C_2_direct
             lower_bound -= np.einsum('pp,qq->pq', d_1, d_1_bar)
             # lower_bound += np.einsum('pq,qp->pq', d_1, d_1_bar)
 
@@ -459,12 +465,15 @@ class two_body_model():
         C_2_exchange = self._calculate_two_body_exchange_cumulant(T_2)
 
         # transform cumulants in natural orbital basis
-        n, v = np.linalg.eigh(RDM_1)
-        C_2_direct_norb = np.einsum('lp,lk,kq->pq', v, C_2_direct, v)
-        C_2_exchange_norb = np.einsum('lp,lk,kq->pq', v, C_2_exchange, v)
+        if natural_orbital_flag:
+            n, v = np.linalg.eigh(RDM_1)
+            C_2_direct = np.einsum('lp,lk,kq->pq', v, C_2_direct, v)
+            C_2_exchange = np.einsum('lp,lk,kq->pq', v, C_2_exchange, v)
+            d_1 = np.diag(n)
 
+        else:
+            d_1 = RDM_1
 
-        d_1 = np.diag(n)
         d_1_bar = np.eye(self.M) - d_1
 
         # calculate upper bound
@@ -476,10 +485,10 @@ class two_body_model():
         # set constraint on two body exchange cumulant when it exceed the physical boundary
         for p, r in it.product(range(self.M), repeat=2):
             if p != r:
-                if C_2_exchange_norb[p, r] > upper_bound[p, r]:
-                    C_2_exchange_norb[p, r] = upper_bound[p, r]
-                elif C_2_exchange_norb[p, r] < lower_bound[p, r]:
-                    C_2_exchange_norb[p, r] = lower_bound[p, r]
+                if C_2_exchange[p, r] > upper_bound[p, r]:
+                    C_2_exchange[p, r] = upper_bound[p, r]
+                elif C_2_exchange[p, r] < lower_bound[p, r]:
+                    C_2_exchange[p, r] = lower_bound[p, r]
                 else:
                     pass
             else:
@@ -487,10 +496,11 @@ class two_body_model():
 
         # print((-C_2_direct_norb + np.einsum('pp,qq->pq', d_1, d_1_bar) + C_2_exchange_norb - np.einsum('pq,qp->pq', d_1, d_1_bar)).min())
         # inverse transform to the MO basis
-        C_2_exchange_new = np.einsum('pl,lk,qk->pq', v, C_2_exchange_norb, v)
+        if natural_orbital_flag:
+            C_2_exchange = np.einsum('pl,lk,qk->pq', v, C_2_exchange, v)
 
         # reverse map C_2_exchange to T_2
-        T_2_exchange = C_2_exchange_new / np.einsum('p,q,q,p->pq', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta)
+        T_2_exchange = C_2_exchange / np.einsum('p,q,q,p->pq', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta)
 
         return T_2_exchange
 
@@ -677,13 +687,13 @@ class two_body_model():
 
             if direct_flag:
                 # correct direct two body density matrix
-                T_2_correct_direct = self._correct_two_body_density_matrix(RDM_1_correct, T['t_2'])
+                T_2_correct_direct = self._correct_two_body_density_matrix(RDM_1_correct, T['t_2'], natural_orbital_flag=False)
                 for p, q in it.product(range(self.M), repeat=2):
                     T['t_2'][p, p, q, q] = T_2_correct_direct[p, q]
 
             if exchange_flag:
                 # correct exchange two body density matrix
-                T_2_correct_exchange = self._correct_exchange_two_body_cumulant(RDM_1_correct, T['t_2'])
+                T_2_correct_exchange = self._correct_exchange_two_body_cumulant(RDM_1_correct, T['t_2'], natural_orbital_flag=False)
                 for p, q in it.product(range(self.M), repeat=2):
                     if p != q:
                         T['t_2'][p, q, q, p] = T_2_correct_exchange[p, q]
