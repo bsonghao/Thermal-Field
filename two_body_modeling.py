@@ -316,7 +316,7 @@ class two_body_model():
 
     def _calculate_two_body_exchange_cumulant(self, T_2):
         """calculate exchange two-body cumulant from T_2 amplitude"""
-        C_2_exchange = np.einsum('p,q,q,q,pqqp->pq', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta, T_2)
+        C_2_exchange = np.einsum('p,q,q,p,pqqp->pq', self.cos_theta, self.sin_theta, self.cos_theta, self.sin_theta, T_2)
         return C_2_exchange
 
     def _calculate_P_cumulant(self, RDM_1, C_2_direct, C_2_exchange):

@@ -67,8 +67,8 @@ def main():
     # H 0 -2.757 2.587
     # H 0  2.757 2.587'''
 
-    atom = HF
-    molecule = "HF"
+    atom = H2O
+    molecule = "H2O"
 
     # setup model input using gaussian-type-orbitals
     molecular_HF = gto.M(
