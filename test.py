@@ -210,7 +210,7 @@ def main():
 
     # run TFCC & thermal NOE calculation
     model = two_body_model(molecule, E_core, h_core, Fock_ground_state, eri_integral, nof_electron, molecule=molecule,
-                       E_NN=NR_energy, T_2_flag=True, chemical_potential=False, partial_trace_condition=False)
+                       E_NN=NR_energy, T_2_flag=True, chemical_potential=True, partial_trace_condition=False)
     # thermal field transform
     model.thermal_field_transform(T=1e8)
     # TFCC imaginary time integration
