@@ -638,22 +638,7 @@ class two_body_model():
             # apply nuclear repulsion energy to energy equation
             E += self.E_NN
 
-            if self.chemical_potential:
-                if beta_tmp < 1. / (self.kb * 5e4):
-                    # compute chemical potential
-                    mu, delta_1, delta_2 = self._calculate_chemical_potential(R_1, T)
-                    # apply chemical potential to CC residue
-                    R_1 -= mu * delta_1
-                    R_2 -= mu * delta_2
 
-                    # E -= mu * self.n_occ
-            if self.partial_trace_condition:
-                if beta_tmp < 1. / (self.kb * 5e4):
-                   # correct partial trace residue once it hits the physical boundary
-                   trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
-                   langrange_multiplier, delta_1, delta_2 = self._constraint_partial_trace(R_2, T)
-                   R_1 -= langrange_multiplier * delta_1
-                   R_2 -= langrange_multiplier * delta_2
 
             # update CC amplitude
             if self.T_2_flag:
@@ -684,6 +669,23 @@ class two_body_model():
                 # T['t_2'] = self.correct_C2(C2, RDM_1_correct, T["t_2"])
             else:
                 pass
+
+            if self.chemical_potential:
+                # if beta_tmp < 1. / (self.kb * 5e4):
+                # compute chemical potential
+                mu, delta_1, delta_2 = self._calculate_chemical_potential(R_1, T)
+                # apply chemical potential to CC residue
+                R_1 -= mu * delta_1
+                R_2 -= mu * delta_2
+
+                    # E -= mu * self.n_occ
+            if self.partial_trace_condition:
+                # if beta_tmp < 1. / (self.kb * 5e4):
+                # correct partial trace residue once it hits the physical boundary
+                trace_residue = self._calculate_partial_trace_residue(RDM_1, T['t_2'])
+                langrange_multiplier, delta_1, delta_2 = self._constraint_partial_trace(R_2, T)
+                R_1 -= langrange_multiplier * delta_1
+                R_2 -= langrange_multiplier * delta_2
 
             if direct_flag:
                 # correct direct two body density matrix
