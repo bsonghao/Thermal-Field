@@ -304,9 +304,53 @@ class two_body_model():
 
         return occupation_number_correct, RDM_1_correct, T_1_correct
 
+    def _correct_occupation_number_new(self, RDM_1, T2):
+        """correct occupation number from 1-RDM"""
+        def calculate_X():
+            """calcuate quantity: X^p_q = \sum_R(2C^pR_qR-C^pR_rQ)"""
+            # calcuate two-body cumulant
+            C2 = self._calculate_full_two_body_cumulant(T2)
+            X = 2*np.trace(C2, axis1=2, axis2=3)
+            X -= np.trace(C2, axis1=1, axis2=2)
+            return X
+
+        # diagonalize 1-RDM to get occupation number and natural orbitals
+        occupation_number, natural_orbital = np.linalg.eigh(RDM_1)
+        X = calculate_X()
+        X_bar = np.dot(natural_orbital.transpose(), np.dot(X, natural_orbital))
+        # correct the occupation number when it is out of bound
+        for index, N_occ in enumerate(occupation_number):
+            if N_occ<0 or N_occ > 1:
+                delta = 1 + 4 * X_bar[index, index]
+                if delta < 0:
+                    delta = 0
+                x1, x2 = (1 - np.sqrt(delta)) / 2. , (1 + np.sqrt(delta)) / 2.
+                if abs(N_occ-x1) < abs(N_occ-x2):
+                    occupation_number[index] = x1
+                else:
+                    occupation_number[index] = x2
+
+        # correct total number of electron
+        tmp = occupation_number * (np.ones_like(occupation_number) - occupation_number)
+        X = sum(occupation_number)
+        Y = sum(tmp)
+        L_lambda = (self.n_occ - X) / Y
+        occupation_number_correct = occupation_number + L_lambda * tmp
+
+        # transfrom the corrected occupation number to the corrected 1-RDM through orbital rotation
+        RDM_1_correct = np.dot(natural_orbital, np.dot(np.diag(occupation_number_correct), natural_orbital.transpose()))
+
+        # reverse mapping the correct 1-RDM to T_1 amplitude
+        T_1_correct = np.zeros_like(RDM_1_correct)
+        T_1_correct += RDM_1_correct
+        T_1_correct -= np.einsum('p,q,pq->pq', self.sin_theta, self.sin_theta, np.eye(self.M))
+        T_1_correct /= np.einsum('q,p->pq', self.cos_theta, self.sin_theta)
+
+        return occupation_number_correct, RDM_1_correct, T_1_correct
+
     def _calculate_full_two_body_cumulant(self, T_2):
         """calculation full (four index) two body cumulant"""
-        C_2 = np.einsum('p,q,r,s,psqr->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
+        C_2 = np.einsum('p,q,r,s,prqs->pqrs', self.cos_theta, self.cos_theta, self.sin_theta, self.sin_theta, T_2)
         return C_2
 
     def _calculate_two_body_direct_cumulant(self, T_2):
@@ -519,8 +563,8 @@ class two_body_model():
         # calculate two body cumulant
         C_2 = self._calculate_full_two_body_cumulant(T_2)
         # evlulate trace condition
-        residue = 2 * np.einsum('pqrq->pr', C_2)
-        residue -= np.einsum('pqqr->pr', C_2)
+        residue = 2*np.trace(C_2, axis1=2, axis2=3)
+        residue -= np.trace(C_2, axis1=1, axis2=2)
         residue += RDM_1
         residue -= np.dot(RDM_1, RDM_1)
         return residue
@@ -661,8 +705,12 @@ class two_body_model():
                 if self.T_2_flag:
                     T['t_2'] = T_2_sym
                 # correct the occupation number
-                occupation_number_correct, RDM_1_correct, T_1_correct = self._correct_occupation_number(RDM_1_sym)
-                T['t_1'] = T_1_correct
+                if True:
+                    occupation_number_correct, RDM_1_correct, T_1_correct = self._correct_occupation_number_new(RDM_1_sym, T['t_2'])
+                    T['t_1'] = T_1_correct
+                else:
+                    occupation_number_correct, RDM_1_correct, T_1_correct = self._correct_occupation_number(RDM_1_sym)
+                    T['t_1'] = T_1_correct
 
                 # turn two body cumulant to be zero if any of p, q, r, s is 1 or 0
                 # C2 = self._calculate_full_two_body_cumulant(T["t_2"])
@@ -689,13 +737,13 @@ class two_body_model():
 
             if direct_flag:
                 # correct direct two body density matrix
-                T_2_correct_direct = self._correct_two_body_density_matrix(RDM_1_correct, T['t_2'], natural_orbital_flag=False)
+                T_2_correct_direct = self._correct_two_body_density_matrix(RDM_1_correct, T['t_2'], natural_orbital_flag=True)
                 for p, q in it.product(range(self.M), repeat=2):
                     T['t_2'][p, p, q, q] = T_2_correct_direct[p, q]
 
             if exchange_flag:
                 # correct exchange two body density matrix
-                T_2_correct_exchange = self._correct_exchange_two_body_cumulant(RDM_1_correct, T['t_2'], natural_orbital_flag=False)
+                T_2_correct_exchange = self._correct_exchange_two_body_cumulant(RDM_1_correct, T['t_2'], natural_orbital_flag=True)
                 for p, q in it.product(range(self.M), repeat=2):
                     if p != q:
                         T['t_2'][p, q, q, p] = T_2_correct_exchange[p, q]
@@ -769,16 +817,16 @@ class two_body_model():
 
 
                 # store data for trace residue
-                self.trace_condition['R'].append(np.trace(trace_residue))
+                self.trace_condition['R'].append(trace_residue.min())
                 # break
 
             beta_tmp += dtau
         # store plot for trace condition
         df = pd.DataFrame(self.trace_condition)
         if self.T_2_flag:
-            df.to_csv("trace_condition_TFCC_CCSD_sym.csv", index=False)
+            df.to_csv("{:}_trace_condition_TFCC_CCSD_sym.csv".format(self.name), index=False)
         else:
-            df.to_csv("trace_condition_TFCC_CCS_sym.csv", index=False)
+            df.to_csv("{:}_trace_condition_TFCC_CCS_sym.csv".format(self.name), index=False)
         # store plot for P Q G condition
         df = pd.DataFrame(self.P_Q_G_condition_alpha_beta)
         if self.T_2_flag:
