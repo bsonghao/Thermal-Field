@@ -1,9 +1,23 @@
-import pyscf
+#!/usr/bin/env python
+#
+# Author: Qiming Sun <osirpt.sun@gmail.com>
+#
+
+'''
+Generate the entire FCI Hamiltonian for small system
+
+See also 36-determinants_basis_matrix.py
+'''
+
+# import numpy
+from pyscf import fci
+# import pyscf
 from pyscf import gto, scf, ao2mo, mcscf
 import numpy as np
-from two_body_modeling import two_body_model
+# from two_body_modeling import two_body_model
 import itertools as it
 import os
+from math import factorial
 
 def extract_Hamiltonian_parameters(mo_flag, CAS_SCF, mol_HF):
     """
@@ -143,82 +157,134 @@ def extract_Hamiltonian_parameters(mo_flag, CAS_SCF, mol_HF):
         return h_core_MO_CAS, eri_MO_CAS, Fock_MO_CAS, E_HF
 
 
-def main():
-    """main run TFCC approach that conduct imaginary time integration on thermal properties for molecular compounds"""
+# perform CASSCF calcuations
+mo_flag = True
 
-    mo_flag = True
+# geometry of molecules (in Angstrom)
+HF = 'H 0 0 0; F 0 0 1.1'
 
-    # geometry of molecules (in Angstrom)
-    HF = 'H 0 0 0; F 0 0 1.1'
+H2O = '''
+O 0 0      0
+H 0 -2.757 2.587
+H 0  2.757 2.587'''
 
-    H2O = '''
-    O 0 0      0
-    H 0 -2.757 2.587
-    H 0  2.757 2.587'''
+O2 = 'O 0 0 0; O 0 0 1.2'
 
-    O2 = 'O 0 0 0; O 0 0 1.2'
+N2 = 'N 0 0 0; N 0 0 1.1'
 
-    N2 = 'N 0 0 0; N 0 0 1.1'
+# active space of molecules
+CAS_N2 = (6, 6)
+CAS_HF = (4, 6)
+CAS_O2 = (8, 6)
 
-    # active space of molecules
-    CAS_N2 = (6, 6)
-    CAS_HF = (4, 6)
-    CAS_O2 = (8, 6)
+atom = N2
+molecule = "N2"
 
-    atom = O2
-    molecule = "O2"
+# setup model input using gaussian-type-orbitals
+molecular_HF = gto.M(
+       atom=atom,  # in Angstrom
+       basis='ccpvdz',
+       # basis="6-31g",
+       symmetry=False,
+       spin=0
+)
 
-    # setup model input using gaussian-type-orbitals
-    molecular_HF = gto.M(
-           atom=atom,  # in Angstrom
-           basis='ccpvdz',
-           # basis="6-31g",
-           symmetry=False,
-           spin=2
-    )
+# run HF calculation
+mean_field = scf.RHF(molecular_HF).run()
+# 6 orbital, 6 electrons
+mycas = mean_field.CASSCF(CAS_N2[0], CAS_N2[1])
+mycas.natorb = True
+# Here mycas.mo_coeff are natural orbitals because .natorb is on.
+# Note The active space orbitals have the same symmetry as the input HF
+# canonical orbitals.  They are not fully sorted wrt the occpancies.
+# The mcscf active orbitals are sorted only within each irreps.
+mycas.kernel()
 
-    # run HF calculation
-    mean_field = scf.RHF(molecular_HF).run()
-    # 6 orbital, 6 electrons
-    mycas = mean_field.CASSCF(CAS_O2[0], CAS_O2[1])
-    mycas.natorb = True
-    # Here mycas.mo_coeff are natural orbitals because .natorb is on.
-    # Note The active space orbitals have the same symmetry as the input HF
-    # canonical orbitals.  They are not fully sorted wrt the occpancies.
-    # The mcscf active orbitals are sorted only within each irreps.
-    mycas.kernel()
+# extract effective model Hamiltonian from the CASSCF calcuation
 
-    # os._exit(0)
-    # extract parameter from the input Hamitonian and CAS-SCF calculation
-    h_core, eri_integral, Fock_ground_state, E_core = \
-    extract_Hamiltonian_parameters(mo_flag, mycas, molecular_HF)
+h_core, eri_integral, Fock_ground_state, E_core = \
+extract_Hamiltonian_parameters(mo_flag, mycas, molecular_HF)
 
-    # energy expectation value (HF energy)
-    # print("CASSCF energy: {:}".format(mycas.e_tot))
-    # E_Hartree_Fock = E_HF
-    # E_Hartree_Fock = mycas.e_tot
-    print("core electron energy (in Hartree):{:.5f}".format(E_core))
+print("effective 1e int:",h_core.shape)
+print("effective 2e int:",eri_integral.shape)
+# energy expectation value (HF energy)
+# print("CASSCF energy: {:}".format(mycas.e_tot))
+# E_Hartree_Fock = E_HF
+# E_Hartree_Fock = mycas.e_tot
+print("core electron energy (in Hartree):{:.5f}".format(E_core))
 
-    # total number of electron
-    OccupationNumber = mycas.mo_occ / 2
-    nof_electron = 3
-    print("total number of electrons:{:}".format(nof_electron))
-    print("occupation number:\n{:}".format(OccupationNumber))
+# total number of electron
+OccupationNumber = mycas.mo_occ / 2
+nof_electron = 3
+print("total number of electrons:{:}".format(nof_electron))
+print("occupation number:\n{:}".format(OccupationNumber))
 
-    # get Nuclear Repusion Energy
-    NR_energy = mycas.energy_nuc()
+# get Nuclear Repusion Energy
+NR_energy = mycas.energy_nuc()
 
-    # run TFCC & thermal NOE calculation
-    model = two_body_model(molecule, E_core, h_core, Fock_ground_state, eri_integral, nof_electron, molecule=molecule,
-                       E_NN=NR_energy, T_2_flag=True, chemical_potential=True, partial_trace_condition=False)
-    # thermal field transform
-    model.thermal_field_transform(T=1e8)
-    # TFCC imaginary time integration
-    model.TFCC_integration(T_final=2e3, N=10000, direct_flag=True, exchange_flag=True, constraint_flag=True)
-    # plot thermal properties
-    # model.Plot_thermal()
+# exact diagonalize the effective Hamiltonian and calcuate thermal properties
 
-    return
 
-if (__name__ == '__main__'):
-    main()
+# numpy.random.seed(1)
+norb = CAS_N2[0]
+nelec = CAS_N2[1]
+h1 = h_core.copy()
+h2 = eri_integral.copy()
+ndet = int(factorial(norb*2) / (factorial(nelec) * factorial(norb*2-nelec)))
+# h1 = numpy.random.random((norb,norb))
+# h2 = numpy.random.random((norb,norb,norb,norb))
+# Restore permutation symmetry
+# h1 = h1 + h1.T
+# h2 = h2 + h2.transpose(1,0,2,3)
+# h2 = h2 + h2.transpose(0,1,3,2)
+# h2 = h2 + h2.transpose(2,3,0,1)
+#
+# pspace function computes the FCI Hamiltonian for "primary" determinants.
+# Primary determinants are the determinants which have lowest expectation
+# value <H>.  np controls the number of primary determinants.
+# To get the entire Hamiltonian, np should be larger than the wave-function
+# size.  In this example, a (8e,7o) FCI problem has 1225 determinants.
+H_fci = fci.direct_spin1.pspace(h1, h2, norb, nelec, np=ndet)[1]
+e_all, v_all = np.linalg.eigh(H_fci)
+
+e_all = e_all + E_core + NR_energy
+
+# e, fcivec = fci.direct_spin1.kernel(h1, h2, norb, nelec, nroots=2,
+                                    # max_space=30, max_cycle=100)
+
+# print('First root:')
+# print('energy', e_all[0], e[0])
+# print('wfn overlap', v_all[:,0].dot(fcivec[0].ravel()))
+
+# print('Second root:')
+# print('energy', e_all[1], e[1])
+# print('wfn overlap', v_all[:,1].dot(fcivec[1].ravel()))
+
+print("GS energy:", e_all[0])
+
+print("Number of root:", len(e_all))
+
+# calculate thermal internal energy
+import pandas as pd
+# define temperature grid
+T = np.linspace(1e3, 1e6, int(1e5))
+data = {"T(K)": T,
+       "Z":[],
+       "E":[],
+       }
+print(T.shape)
+Kb = 3.1668152e-06 # Boltzmann constant Hartree T-1
+const = e_all.min()
+e_all -= const
+for temp in T:
+     # calculate Boltzmann factor
+     Blt_fact = np.exp(-e_all/(Kb*temp))
+     # calculate partition function
+     part = sum(Blt_fact)
+     # calcuate internal energy
+     energy = sum(Blt_fact * e_all) / part
+     data["Z"].append(part)
+     data["E"].append(energy+const)
+# store thermal data
+df = pd.DataFrame(data)
+df.to_csv("N2_FCI_thermal_data.csv")
