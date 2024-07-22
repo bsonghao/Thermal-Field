@@ -16,6 +16,7 @@ import numpy as np
 import itertools as it
 import os
 from math import factorial
+import pandas as pd
 
 def extract_Hamiltonian_parameters(mo_flag, CAS_SCF, mol_HF):
     """
@@ -183,6 +184,84 @@ def run_FCI_calcuation(h1 ,h2, CAS, E_core, NR_energy):
 
     return e_all
 
+def cal_chemical_potential(beta, energy, total_nel, max_threshold=100):
+    """
+    implement a Newtonian procedure to calculate the chemical potential
+    """
+    def cal_z():
+        """
+        calculate grand canonical partition function
+        """
+        Z = 0
+        for key in energy.keys():
+            n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
+            Z += np.exp(beta * n_el * mu_temp) * sum(np.exp(-beta * energy[key]))
+        return Z
+
+    def cal_n():
+        """
+        calculate <n>
+        """
+        Z = cal_z()
+        n_avg = 0
+        for key in energy.keys():
+            n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
+            n_avg += np.exp(beta * n_el * mu_temp) * n_el * sum(np.exp(-beta * energy[key]))
+        n_avg /= Z
+        return Z, n_avg
+
+    def cal_dn():
+        """
+        calculate dn/dmu
+        """
+        dn_temp = 0
+        for key in energy.keys():
+            n_el = key[1][0] + key[1][1]
+            dn_temp += n_el**2 * beta * np.exp(beta*mu_temp*n_el) * sum(np.exp(-beta * energy[key]))
+            dn_temp -= n_temp * n_el * beta * np.exp(mu_temp * beta * n_el) * sum(np.exp(-beta * energy[key]))
+            dn_temp /= z_temp
+        return dn_temp
+
+    mu_temp = 0 # intialize the chemical potential to be zero
+    z_temp, n_temp = cal_n() # initialize partition function and <n>
+    print("n_temp:", n_temp)
+    # iteratively update mu
+    i = 0
+    while( not (np.allclose(total_nel, n_temp))):
+        k = cal_dn()
+        mu_temp = (total_nel - n_temp) / k + mu_temp
+        z_temp, n_temp = cal_n() # update partition function and <n>
+        i += 1
+        print("Iteration{:d}:".format(i))
+        print("mu={:f}".format(mu_temp))
+        print("n_avg - n_el:", total_nel-n_temp)
+
+        if i > max_threshold:
+            print("***Warning: Newtonian procedure do not converge within {:d} iteration".format(max_threshold))
+            print("n_avg - n_el:", total_nel-n_temp)
+            break
+
+    return mu_temp
+
+def cal_canonical_thermal(beta, energy, total_nel):
+    """
+    calcuation thermal properties for canonical ensemble
+    """
+    temp = np.array([])
+    for key in energy.keys():
+        n_el = key[1][0] + key[1][1]
+        if n_el == total_nel:
+            temp = np.concatenate([temp, energy[key]])
+    const = temp.min()
+    temp -= const
+    boltzman_factor = np.exp(-beta * temp)
+    # calculate partition function
+    Z = sum(boltzman_factor)
+    E = sum(temp * boltzman_factor) / Z
+    E += const
+    return Z, E
+
+
 def main():
     # perform CASSCF calcuations
     mo_flag = True
@@ -204,10 +283,11 @@ def main():
     CAS_HF = (4, 6)
     CAS_O2 = (8, (4, 2))
 
-    CAS = CAS_N2
-    atom = N2
-    molecule = "N2"
+    CAS = CAS_O2
+    atom = O2
+    molecule = "O2"
     s_mult = CAS[1][0]-CAS[1][1]
+    nel_CAS = CAS[1][0] + CAS[1][1]
 
     molecular_HF = gto.M(
            atom=atom,  # in Angstrom
@@ -237,6 +317,7 @@ def main():
 
     # loop over all configurations and diagonalize
     num_orb = CAS[0]
+    energy_dic = {}
     for num_elec in range(num_orb+1):
         for i in range(num_elec+1):
             alpha_elec = i
@@ -244,9 +325,50 @@ def main():
             CAS_FCI = (num_orb, (alpha_elec, beta_elec))
             print("Run calcuation with configuration:",CAS_FCI)
             if num_elec != 0:
-                run_FCI_calcuation(h_core, eri_integral, CAS_FCI, E_core, NR_energy)
+                energy_level = run_FCI_calcuation(h_core, eri_integral, CAS_FCI, E_core, NR_energy)
+                energy_dic[(CAS_FCI)] = energy_level
             else:
                 print("GS energy:", E_core + NR_energy)
+                energy_dic[(CAS_FCI)] = np.array([E_core + NR_energy])
+
+    for key in energy_dic.keys():
+        print("Configuration:", key)
+        print("GS energy: ", energy_dic[key][0])
+
+    # calculation chemical potential using the Newtonian procedure
+    # Kb = 3.1668152e-06 # Boltzmann constant Hartree K-1
+    # beta = 1. / (Kb * 3e4) # say at 300 K
+
+    # renormalize the energy
+    # const = 0
+    # for key in energy_dic.keys():
+        # if energy_dic[key].min() < const:
+            # const = energy_dic[key].min()
+    # for key in energy_dic.keys():
+        # energy_dic[key] -= const
+
+    # mu = cal_chemical_potential(beta, energy_dic, nel_CAS)
+    # print("Converge chemical potential:", mu)
+
+    # calcuate canonical partition function
+    T = np.linspace(1e3, 1e6, int(1e5))
+    data = {
+    "T(K)": T,
+       "Z":[],
+       "E":[],
+          }
+     # print(T.shape)
+    Kb = 3.1668152e-06 # Boltzmann constant Hartree K-1
+
+    for temperature in T:
+         # calculate Boltzmann factor
+         beta = 1. / (Kb * temperature)
+         part, inter_e = cal_canonical_thermal(beta, energy_dic, nel_CAS)
+         data["Z"].append(part)
+         data["E"].append(inter_e)
+     # store thermal data
+    df = pd.DataFrame(data)
+    df.to_csv("{:}_FCI_fix_canonical_thermal_data.csv".format(molecule))
 
     return
 
