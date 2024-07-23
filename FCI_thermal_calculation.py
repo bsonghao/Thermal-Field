@@ -225,17 +225,17 @@ def cal_chemical_potential(beta, energy, total_nel, max_threshold=100):
 
     X = 0 # intialize the chemical potential (X = mu * beta) to be zero
     z_temp, n_temp = cal_n() # initialize partition function and <n>
-    # print("intial <n>:{:f}".format(n_temp))
+    print("intial <n>:{:f}".format(n_temp))
     # iteratively update mu
     i = 0
-    while( not (np.allclose(total_nel, n_temp))):
+    while( not (np.allclose(total_nel, n_temp, atol=1e-2, rtol=1e-3))):
         k = cal_dn()
-        X = (total_nel - n_temp) / k +X
+        X = (total_nel - n_temp) / k + X
         z_temp, n_temp = cal_n() # update partition function and <n>
         i += 1
-        # print("Iteration{:d}:".format(i))
-        # print("beta*mu={:f}".format(X))
-        # print("n_avg - n_el:", total_nel-n_temp)
+        print("Iteration{:d}:".format(i))
+        print("beta*mu={:f}".format(X))
+        print("n_avg - n_el:", total_nel-n_temp)
         if np.allclose(total_nel, n_temp):
             print("Newtonian procedure converged in {:d} iterations!".format(i))
 
@@ -312,9 +312,9 @@ def main():
     CAS_HF = (4, 6)
     CAS_O2 = (8, (4, 2))
 
-    CAS = CAS_N2
-    atom = N2
-    molecule = "N2"
+    CAS = CAS_O2
+    atom = O2
+    molecule = "O2"
     s_mult = CAS[1][0]-CAS[1][1]
     nel_CAS = CAS[1][0] + CAS[1][1]
 
@@ -365,8 +365,8 @@ def main():
         print("GS energy: ", energy_dic[key][0])
 
     # calculation chemical potential using the Newtonian procedure
-    Kb = 3.1668152e-06 # Boltzmann constant Hartree K-1
-    beta = 1. / (Kb * 1e6) # say at 300 K
+    # Kb = 3.1668152e-06 # Boltzmann constant Hartree K-1
+    # beta = 1. / (Kb * 5e3) # say at 300 K
 
     # renormalize the energy
     const = 0
@@ -376,10 +376,11 @@ def main():
     for key in energy_dic.keys():
         energy_dic[key] -= const
 
-
+    # mu =cal_chemical_potential(beta, energy_dic, nel_CAS)
+    # print("Converge chemical potential:", mu)
 
     # calcuate grand canonical partition function
-    T = np.linspace(1e3, 1e7, int(2e4))
+    T = np.linspace(1e3, 1e7, int(1e3))
     data = {
       "T(K)": T,
        "Z":[],
