@@ -185,7 +185,7 @@ def run_FCI_calcuation(h1 ,h2, CAS, E_core, NR_energy):
 
     return e_all
 
-def cal_chemical_potential(beta, energy, total_nel, max_threshold=100):
+def cal_chemical_potential(initial_guess, beta, energy, total_nel, max_threshold=1000):
     """
     implement a Newtonian procedure to calculate the chemical potential
     """
@@ -223,7 +223,7 @@ def cal_chemical_potential(beta, energy, total_nel, max_threshold=100):
             dn_temp /= z_temp
         return dn_temp
 
-    X = 0 # intialize the chemical potential (X = mu * beta) to be zero
+    X = initial_guess # intialize the chemical potential (X = mu * beta) to be zero
     z_temp, n_temp = cal_n() # initialize partition function and <n>
     print("intial <n>:{:f}".format(n_temp))
     # iteratively update mu
@@ -233,15 +233,17 @@ def cal_chemical_potential(beta, energy, total_nel, max_threshold=100):
         X = (total_nel - n_temp) / k + X
         z_temp, n_temp = cal_n() # update partition function and <n>
         i += 1
-        print("Iteration{:d}:".format(i))
-        print("beta*mu={:f}".format(X))
-        print("n_avg - n_el:", total_nel-n_temp)
+        # print("Iteration{:d}:".format(i))
+        # print("beta*mu={:f}".format(X))
+        # print("n_avg - n_el:", total_nel-n_temp)
         if np.allclose(total_nel, n_temp):
             print("Newtonian procedure converged in {:d} iterations!".format(i))
 
         if math.isnan(X):
-            print("Warning: Newtonian procedure break, return its initial value!")
+            print("***Warning: Newtonian procedure break, return its initial value!")
             X = 0.
+            z_temp, n_temp = cal_n()
+            print("Terminate at iteration {:d}, n_avg:{:f}".format(i, n_temp))
             break
 
         if i > max_threshold:
@@ -249,7 +251,7 @@ def cal_chemical_potential(beta, energy, total_nel, max_threshold=100):
             print("n_avg - n_el:", total_nel-n_temp)
             break
 
-    return X
+    return X, n_temp
 
 def cal_canonical_thermal(beta, energy, total_nel):
     """
@@ -312,9 +314,9 @@ def main():
     CAS_HF = (4, 6)
     CAS_O2 = (8, (4, 2))
 
-    CAS = CAS_O2
-    atom = O2
-    molecule = "O2"
+    CAS = CAS_N2
+    atom = N2
+    molecule = "N2"
     s_mult = CAS[1][0]-CAS[1][1]
     nel_CAS = CAS[1][0] + CAS[1][1]
 
@@ -385,18 +387,21 @@ def main():
       "T(K)": T,
        "Z":[],
        "E":[],
+       "n_el":[],
           }
      # print(T.shape)
     Kb = 3.1668152e-06 # Boltzmann constant Hartree K-1
-
+    initial_guess = 0
     for temperature in T:
          # calculate Boltzmann factor
          beta = 1. / (Kb * temperature)
-         mu = cal_chemical_potential(beta, energy_dic, nel_CAS)
+         mu , n_avg= cal_chemical_potential(initial_guess, beta, energy_dic, nel_CAS)
+         initial_guess = mu
          print("Converge chemical potential:", mu)
          part, inter_e = cal_grand_canonical_thermal(beta, energy_dic, mu)
          data["Z"].append(part)
          data["E"].append(inter_e+const)
+         data["n_el"].append(n_avg)
      # store thermal data
     df = pd.DataFrame(data)
     df.to_csv("{:}_FCI_fix_grand_canonical_thermal_data.csv".format(molecule))
@@ -428,101 +433,3 @@ def main():
 
 if (__name__ == '__main__'):
     main()
-
-# setup model input using gaussian-type-orbitals
-# molecular_HF = gto.M(
-       # atom=atom,  # in Angstrom
-       # basis='ccpvdz',
-       # basis="6-31g",
-       # symmetry=False,
-       # spin=2
-# )
-#
-# run RHF calculation
-# mean_field = scf.RHF(molecular_HF).run()
-# 6 orbital, 6 electrons
-# mycas = mean_field.CASSCF(CAS_O2[0], CAS_O2[1])
-# mycas.natorb = True
-# Here mycas.mo_coeff are natural orbitals because .natorb is on.
-# Note The active space orbitals have the same symmetry as the input HF
-# canonical orbitals.  They are not fully sorted wrt the occpancies.
-# The mcscf active orbitals are sorted only within each irreps.
-# mycas.kernel()
-#
-# extract effective model Hamiltonian from the CASSCF calcuation
-#
-# h_core, eri_integral, Fock_ground_state, E_core = \
-# extract_Hamiltonian_parameters(mo_flag, mycas, molecular_HF)
-#
-# print("effective 1e int:",h_core.shape)
-# print("effective 2e int:",eri_integral.shape)
-#
-# print("core electron energy (in Hartree):{:.5f}".format(E_core))
-#
-# total number of electron
-# OccupationNumber = mycas.mo_occ / 2
-# nof_electron = 3
-# print("total number of electrons:{:}".format(nof_electron))
-# print("occupation number:\n{:}".format(OccupationNumber))
-#
-# get Nuclear Repusion Energy
-# NR_energy = mycas.energy_nuc()
-#
-# exact diagonalize the effective Hamiltonian and calcuate thermal properties
-#
-#
-# numpy.random.seed(1)
-# norb = CAS_O2[0]
-# nelec_alpha = CAS_O2[1][0]
-# nelec_beta = CAS_O2[1][1]
-# h1 = h_core.copy()
-# h2 = eri_integral.copy()
-# Alpha_config = factorial(norb) / (factorial(nelec_alpha) * factorial(norb - nelec_alpha))
-# Beta_config =  factorial(norb) / (factorial(nelec_beta) * factorial(norb - nelec_beta))
-# ndet = Alpha_config * Beta_config
-#
-# H_fci = fci.direct_spin1.pspace(h1, h2, norb, CAS_O2[1], np=ndet)[1]
-# e_all, v_all = np.linalg.eigh(H_fci)
-#
-# e_all = e_all + E_core + NR_energy
-#
-# e, fcivec = fci.direct_spin1.kernel(h1, h2, norb, nelec, nroots=2,
-                                    # max_space=30, max_cycle=100)
-#
-# print('First root:')
-# print('energy', e_all[0], e[0])
-# print('wfn overlap', v_all[:,0].dot(fcivec[0].ravel()))
-#
-# print('Second root:')
-# print('energy', e_all[1], e[1])
-# print('wfn overlap', v_all[:,1].dot(fcivec[1].ravel()))
-#
-# print("GS energy:", e_all[0])
-#
-# print("Number of root:", len(e_all))
-#
-# calculate thermal internal energy
-# import pandas as pd
-# define temperature grid
-# T = np.linspace(1e3, 1e6, int(1e5))
-# data = {"T(K)": T,
-       # "Z":[],
-       # "E":[],
-       # }
-# print(T.shape)
-# Kb = 3.1668152e-06 # Boltzmann constant Hartree T-1
-# const = e_all.min()
-# e_all -= const
-# for temp in T:
-     # calculate Boltzmann factor
-     # Blt_fact = np.exp(-e_all/(Kb*temp))
-     # calculate partition function
-     # part = sum(Blt_fact)
-     # calcuate internal energy
-     # energy = sum(Blt_fact * e_all) / part
-     # data["Z"].append(part)
-     # data["E"].append(energy+const)
-# store thermal data
-# df = pd.DataFrame(data)
-# df.to_csv("O2_FCI_fix_config_thermal_data.csv")
-#
