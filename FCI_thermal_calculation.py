@@ -185,70 +185,96 @@ def run_FCI_calcuation(h1 ,h2, CAS, E_core, NR_energy):
 
     return e_all
 
-def cal_chemical_potential(initial_guess, beta, energy, total_nel, max_threshold=1000):
+def cal_chemical_potential(mu_range, beta, energy, total_nel, max_threshold=1000):
     """
     implement a Newtonian procedure to calculate the chemical potential
     """
-    def cal_z():
+
+    def cal_z(mu):
         """
         calculate grand canonical partition function
         """
         Z = 0
         for key in energy.keys():
             n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
-            Z += np.exp(X * n_el) * sum(np.exp(-beta * energy[key]))
+            Z += np.exp(mu * n_el) * sum(np.exp(-beta * energy[key]))
         return Z
 
-    def cal_n():
+    def cal_n(mu):
         """
         calculate <n>
         """
-        Z = cal_z()
+        Z = cal_z(mu)
         n_avg = 0
         for key in energy.keys():
             n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
-            n_avg += np.exp(X * n_el) * n_el * sum(np.exp(-beta * energy[key]))
+            n_avg += np.exp(mu * n_el) * n_el * sum(np.exp(-beta * energy[key]))
         n_avg /= Z
         return Z, n_avg
 
-    def cal_dn():
+    def form_initial_guess():
+        """
+        determine initial guess by initial define a grid chemial potential and
+        find the value whose corresponding <n>  is closest to the corect number of electron
+        """
+        # format mu grid
+        mu_grid = mu_range
+        n_grid = np.zeros_like(mu_grid)
+        # z_grid, n_grid = cal_n(mu_grid)
+        for idx, mu in enumerate(mu_grid):
+            z, n = cal_n(mu)
+            if math.isnan(n):
+                n_grid[idx] = 100
+            else:
+                n_grid[idx] = n
+
+        n_grid = abs(n_grid - total_nel)
+        min_point = n_grid.min()
+        for idx, n in enumerate(n_grid):
+            if n == min_point:
+                initial_guess = mu_grid[idx]
+                break
+        return initial_guess
+
+    def cal_dn(mu):
         """
         calculate dn/dmu
         """
         dn_temp = 0
         for key in energy.keys():
             n_el = key[1][0] + key[1][1]
-            dn_temp += n_el**2 * beta * np.exp(X*n_el) * sum(np.exp(-beta * energy[key]))
-            dn_temp -= n_temp * n_el * beta * np.exp(X * n_el) * sum(np.exp(-beta * energy[key]))
+            dn_temp += n_el**2 * beta * np.exp(mu*n_el) * sum(np.exp(-beta * energy[key]))
+            dn_temp -= n_temp * n_el * beta * np.exp(mu * n_el) * sum(np.exp(-beta * energy[key]))
             dn_temp /= z_temp
         return dn_temp
-
-    X = initial_guess # intialize the chemical potential (X = mu * beta) to be zero
-    z_temp, n_temp = cal_n() # initialize partition function and <n>
+    initial_guess = form_initial_guess()
+    X =  initial_guess# intialize the chemical potential (X = mu * beta) to be zero
+    z_temp, n_temp = cal_n(X) # initialize partition function and <n>
     print("intial <n>:{:f}".format(n_temp))
     # iteratively update mu
     i = 0
-    while( not (np.allclose(total_nel, n_temp, atol=1e-2, rtol=1e-3))):
-        k = cal_dn()
+    while( not (np.allclose(total_nel, n_temp, atol=1e-3, rtol=1e-4))):
+        k = cal_dn(X)
         X = (total_nel - n_temp) / k + X
-        z_temp, n_temp = cal_n() # update partition function and <n>
+        z_temp, n_temp = cal_n(X) # update partition function and <n>
         i += 1
         # print("Iteration{:d}:".format(i))
         # print("beta*mu={:f}".format(X))
         # print("n_avg - n_el:", total_nel-n_temp)
         if np.allclose(total_nel, n_temp):
-            print("Newtonian procedure converged in {:d} iterations!".format(i))
+            print("Newtonian procedure converged in {:d} iteration:".format(i))
 
         if math.isnan(X):
             print("***Warning: Newtonian procedure break, return its initial value!")
-            X = 0.
-            z_temp, n_temp = cal_n()
+            X = initial_guess
+            z_temp, n_temp = cal_n(X)
             print("Terminate at iteration {:d}, n_avg:{:f}".format(i, n_temp))
             break
 
         if i > max_threshold:
-            print("***Warning: Newtonian procedure do not converge within {:d} iteration".format(max_threshold))
-            print("n_avg - n_el:", total_nel-n_temp)
+            print("***Warning: Newtonian procedure do not converge within {:d} iteration, returen its initial value".format(max_threshold))
+            X = initial_guess
+            # print("n_avg - n_el:", total_nel-n_temp)
             break
 
     return X, n_temp
@@ -314,9 +340,9 @@ def main():
     CAS_HF = (4, 6)
     CAS_O2 = (8, (4, 2))
 
-    CAS = CAS_N2
-    atom = N2
-    molecule = "N2"
+    CAS = CAS_O2
+    atom = O2
+    molecule = "O2"
     s_mult = CAS[1][0]-CAS[1][1]
     nel_CAS = CAS[1][0] + CAS[1][1]
 
@@ -354,7 +380,7 @@ def main():
             alpha_elec = i
             beta_elec = num_elec - i
             CAS_FCI = (num_orb, (alpha_elec, beta_elec))
-            print("Run calcuation with configuration:",CAS_FCI)
+            print("Run calculation with configuration:",CAS_FCI)
             if num_elec != 0:
                 energy_level = run_FCI_calcuation(h_core, eri_integral, CAS_FCI, E_core, NR_energy)
                 energy_dic[(CAS_FCI)] = energy_level
@@ -366,10 +392,6 @@ def main():
         print("Configuration:", key)
         print("GS energy: ", energy_dic[key][0])
 
-    # calculation chemical potential using the Newtonian procedure
-    # Kb = 3.1668152e-06 # Boltzmann constant Hartree K-1
-    # beta = 1. / (Kb * 5e3) # say at 300 K
-
     # renormalize the energy
     const = 0
     for key in energy_dic.keys():
@@ -378,11 +400,8 @@ def main():
     for key in energy_dic.keys():
         energy_dic[key] -= const
 
-    # mu =cal_chemical_potential(beta, energy_dic, nel_CAS)
-    # print("Converge chemical potential:", mu)
-
     # calcuate grand canonical partition function
-    T = np.linspace(1e3, 1e7, int(1e3))
+    T = np.linspace(1e3, 1e7, int(2e2))
     data = {
       "T(K)": T,
        "Z":[],
@@ -391,12 +410,51 @@ def main():
           }
      # print(T.shape)
     Kb = 3.1668152e-06 # Boltzmann constant Hartree K-1
-    initial_guess = 0
+    # initial_guess = 0
+    # mu_space = np.linspace(-10,10,1000)
+
+    # def cal_z(energy, X, beta):
+        # """
+        # calculate grand canonical partition function
+        # """
+        # Z = 0
+        # for key in energy.keys():
+            # n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
+            # Z += np.exp(X * n_el) * sum(np.exp(-beta * energy[key]))
+        # return Z
+#
+    # def cal_n(energy, X, beta):
+        # """
+        # calculate <n>
+        # """
+        # Z = cal_z(energy, X, beta)
+        # n_avg = 0
+        # for key in energy.keys():
+            # n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
+            # n_avg += np.exp(X * n_el) * n_el * sum(np.exp(-beta * energy[key]))
+        # n_avg /= Z
+        # return Z, n_avg
+    # import matplotlib.pyplot as plt
+#
+    # n_space = []
+    # beta = 1. / (Kb * 1e6)
+    # for mu in mu_space:
+        # z, n = cal_n(energy_dic, mu, beta)
+        # n_space.append(n)
+#
+    # plt.plot(mu_space, n_space)
+    # plt.show()
+    # os.exit(0)
     for temperature in T:
          # calculate Boltzmann factor
          beta = 1. / (Kb * temperature)
-         mu , n_avg= cal_chemical_potential(initial_guess, beta, energy_dic, nel_CAS)
-         initial_guess = mu
+         if temperature > 1e5:
+             mu_range = np.linspace(-1, 0, 1000)
+         else:
+             mu_range = np.linspace(-200, 200, 1000)
+         mu , n_avg= cal_chemical_potential(mu_range, beta, energy_dic, nel_CAS)
+         # initial_guess = mu
+         print("At T = {:f} K".format(temperature))
          print("Converge chemical potential:", mu)
          part, inter_e = cal_grand_canonical_thermal(beta, energy_dic, mu)
          data["Z"].append(part)
