@@ -558,11 +558,9 @@ class two_body_model():
 
         # initialize t_1
         RDM_1 = np.eye(self.M) * self.f
-        initial_T["t_1"] += RDM_1.transpose()
+        initial_T["t_1"] += RDM_1
         initial_T["t_1"] -= np.einsum('p,q,pq->qp', self.sin_theta, self.sin_theta, np.eye(self.M))
         initial_T["t_1"] /= np.einsum('q,p->qp', self.cos_theta, self.sin_theta)
-
-        # initialize t_2
 
         return initial_T
 
@@ -661,13 +659,13 @@ class two_body_model():
 
             if direct_flag:
                 # correct direct two body density matrix
-                T_2_correct_direct = self._correct_two_body_density_matrix(RDM_1_correct, T['t_2'], natural_orbital_flag=True)
+                T_2_correct_direct = self._correct_two_body_density_matrix(RDM_1_correct, T['t_2'], natural_orbital_flag=False)
                 for p, q in it.product(range(self.M), repeat=2):
                     T['t_2'][p, p, q, q] = T_2_correct_direct[p, q]
 
             if exchange_flag:
                 # correct exchange two body density matrix
-                T_2_correct_exchange = self._correct_exchange_two_body_cumulant(RDM_1_correct, T['t_2'], natural_orbital_flag=True)
+                T_2_correct_exchange = self._correct_exchange_two_body_cumulant(RDM_1_correct, T['t_2'], natural_orbital_flag=False)
                 for p, q in it.product(range(self.M), repeat=2):
                     if p != q:
                         T['t_2'][p, q, q, p] = T_2_correct_exchange[p, q]
