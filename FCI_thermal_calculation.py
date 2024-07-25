@@ -243,8 +243,8 @@ def cal_chemical_potential(mu_range, beta, energy, total_nel, max_threshold=1000
         dn_temp = 0
         for key in energy.keys():
             n_el = key[1][0] + key[1][1]
-            dn_temp += n_el**2 * beta * np.exp(mu*n_el) * sum(np.exp(-beta * energy[key]))
-            dn_temp -= n_temp * n_el * beta * np.exp(mu * n_el) * sum(np.exp(-beta * energy[key]))
+            dn_temp += n_el**2 * np.exp(mu*n_el) * sum(np.exp(-beta * energy[key]))
+            dn_temp -= n_temp * n_el  * np.exp(mu * n_el) * sum(np.exp(-beta * energy[key]))
             dn_temp /= z_temp
         return dn_temp
     initial_guess = form_initial_guess()
@@ -253,7 +253,7 @@ def cal_chemical_potential(mu_range, beta, energy, total_nel, max_threshold=1000
     print("intial <n>:{:f}".format(n_temp))
     # iteratively update mu
     i = 0
-    while( not (np.allclose(total_nel, n_temp, atol=1e-3, rtol=1e-4))):
+    while( not (np.allclose(total_nel, n_temp, atol=1e-4, rtol=1e-5))):
         k = cal_dn(X)
         X = (total_nel - n_temp) / k + X
         z_temp, n_temp = cal_n(X) # update partition function and <n>
@@ -261,8 +261,8 @@ def cal_chemical_potential(mu_range, beta, energy, total_nel, max_threshold=1000
         # print("Iteration{:d}:".format(i))
         # print("beta*mu={:f}".format(X))
         # print("n_avg - n_el:", total_nel-n_temp)
-        if np.allclose(total_nel, n_temp):
-            print("Newtonian procedure converged in {:d} iteration:".format(i))
+        if np.allclose(total_nel, n_temp, atol=1e-4, rtol=1e-5):
+            print("Newtonian procedure converged in {:d} iteration".format(i))
 
         if math.isnan(X):
             print("***Warning: Newtonian procedure break, return its initial value!")
@@ -342,7 +342,7 @@ def main():
 
     CAS = CAS_O2
     atom = O2
-    molecule = "H2"
+    molecule = "O2"
     s_mult = CAS[1][0]-CAS[1][1]
     nel_CAS = CAS[1][0] + CAS[1][1]
 
@@ -456,7 +456,7 @@ def main():
              else:
                  mu_range = np.linspace(-200, 200, 1000)
          elif molecule == "N2":
-             mu_ranage = np.linspace(0, 100, 1000)
+             mu_range = np.linspace(0, 100, 1000)
          else:
              assert False, "Opps! We don not have the mu range for that molecule!"
          mu , n_avg= cal_chemical_potential(mu_range, beta, energy_dic, nel_CAS)
