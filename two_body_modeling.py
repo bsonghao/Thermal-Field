@@ -1,4 +1,4 @@
-import sys
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -546,28 +546,30 @@ class two_body_model():
 
         return langrange_multiplier, delta_1, delta_2
 
+    def cal_initial_T(self):
+        """calculate initial T amplitude at zero temperature"""
+        initial_T = {
+                     "t_0": 0,
+                     "t_1": np.zeros([self.M, self.M]),
+                     "t_2": np.zeros([self.M, self.M, self.M, self.M])
+                     }
+        # initialize t_0
+        initial_T["t_0"] = self.M * np.log(1 + self.f / (1 - self.f))
+
+        # initialize t_1
+        RDM_1 = np.eye(self.M) * self.f
+        initial_T["t_1"] += RDM_1.transpose()
+        initial_T["t_1"] -= np.einsum('p,q,pq->qp', self.sin_theta, self.sin_theta, np.eye(self.M))
+        initial_T["t_1"] /= np.einsum('q,p->qp', self.cos_theta, self.sin_theta)
+
+        # initialize t_2
+
+        return initial_T
+
     def TFCC_integration(self, T_final, N, direct_flag=True, exchange_flag=True, constraint_flag=True):
         """conduct imaginary time integration (first order Euler scheme) to calculate thermal properties"""
         # map initial T amplitude from reduced density matrix at zero beta
-        ## 1-RDM
-        RDM_1 = np.eye(self.M) * self.f
-
-        # mapping initial T amplitudes from RDMs
-        ## mapping T_2
-        t_2 = np.zeros([self.M, self.M, self.M, self.M])
-
-        ## mapping T_1
-        t_1 = np.zeros([self.M, self.M])
-        t_1 += RDM_1.transpose()
-        t_1 -= np.einsum('p,q,pq->qp', self.sin_theta, self.sin_theta, np.eye(self.M))
-        t_1 /= np.einsum('q,p->qp', self.cos_theta, self.sin_theta)
-
-        # map initial constant amplitude (at zero beta)
-        f = self.f
-        t_0 = self.M * np.log(1 + f / (1 - f))
-
-        # store T amplitude in a dictionary
-        T = {"t_2": t_2, "t_1": t_1, "t_0": t_0}
+        T = self.cal_initial_T()
 
         # compute final beta
         beta_final = 1. / (self.kb * T_final)

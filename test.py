@@ -4,6 +4,7 @@ import numpy as np
 from two_body_modeling import two_body_model
 import itertools as it
 import os
+from math import factorial
 
 def extract_Hamiltonian_parameters(mo_flag, CAS_SCF, mol_HF):
     """
@@ -141,6 +142,56 @@ def extract_Hamiltonian_parameters(mo_flag, CAS_SCF, mol_HF):
 
 
         return h_core_MO_CAS, eri_MO_CAS, Fock_MO_CAS, E_HF
+def cal_initial_chemical_potential(num_orb):
+    """
+    calculate initial chemical potential at zero beta
+    """
+    def cal_n(dic, mu):
+        """
+        calculate <n>
+        """
+        n = 0
+        z = 0
+
+        for key in dic.keys():
+            n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
+            z += np.exp(mu * n_el) * dic[key]
+
+        for key in dic.keys():
+            n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
+            n += np.exp(mu * n_el) * n_el * dic[key]
+
+        n /= z
+
+        return n
+
+
+    def cal_dn(dic, mu):
+        """
+        calculate d<n>/dmu
+        """
+        dn_temp = 0
+        for key in dic.keys():
+            n_el = key[1][0] + key[1][1]
+            dn_temp += n_el**2 * beta * np.exp(mu*n_el) * sum(np.exp(-beta * energy[key]))
+            dn_temp -= n_temp * n_el * beta * np.exp(mu * n_el) * sum(np.exp(-beta * energy[key]))
+            dn_temp /= z_temp
+        return dn_temp
+
+    M = []
+    config_dic = {}
+    # loop over all configurations and calcuate degeneracy
+    for num_elec in range(num_orb+1):
+        for i in range(num_elec+1):
+            alpha_elec = i
+            beta_elec = num_elec - i
+            degeneracy = (factorial(num_orb) / factorial(alpha_elec)) * (factorial(num_orb) / factorial(beta_elec))
+            config = (num_orb, (alpha_elec, beta_elec))
+            config_dic[config] = degeneracy
+
+
+
+    return mu
 
 
 def main():
