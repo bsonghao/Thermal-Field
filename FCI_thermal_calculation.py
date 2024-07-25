@@ -342,7 +342,7 @@ def main():
 
     CAS = CAS_O2
     atom = O2
-    molecule = "O2"
+    molecule = "H2"
     s_mult = CAS[1][0]-CAS[1][1]
     nel_CAS = CAS[1][0] + CAS[1][1]
 
@@ -401,7 +401,7 @@ def main():
         energy_dic[key] -= const
 
     # calcuate grand canonical partition function
-    T = np.linspace(1e3, 1e7, int(2e2))
+    T = np.linspace(1e3, 1e7, int(1e3))
     data = {
       "T(K)": T,
        "Z":[],
@@ -448,10 +448,17 @@ def main():
     for temperature in T:
          # calculate Boltzmann factor
          beta = 1. / (Kb * temperature)
-         if temperature > 1e5:
-             mu_range = np.linspace(-1, 0, 1000)
+         if molecule == "O2":
+             if temperature > 1e4 and temperature < 5e4:
+                 mu_range = np.linspace(-10, 0, 1000)
+             elif temperature > 5e4:
+                 mu_range = np.linspace(-1, 0, 1000)
+             else:
+                 mu_range = np.linspace(-200, 200, 1000)
+         elif molecule == "N2":
+             mu_ranage = np.linspace(0, 100, 1000)
          else:
-             mu_range = np.linspace(-200, 200, 1000)
+             assert False, "Opps! We don not have the mu range for that molecule!"
          mu , n_avg= cal_chemical_potential(mu_range, beta, energy_dic, nel_CAS)
          # initial_guess = mu
          print("At T = {:f} K".format(temperature))
