@@ -18,6 +18,8 @@ import os
 import math
 from math import factorial
 import pandas as pd
+import pickle
+
 
 def extract_Hamiltonian_parameters(mo_flag, CAS_SCF, mol_HF):
     """
@@ -340,9 +342,9 @@ def main():
     CAS_HF = (4, 6)
     CAS_O2 = (8, (4, 2))
 
-    CAS = CAS_O2
-    atom = O2
-    molecule = "O2"
+    CAS = CAS_N2
+    atom = N2
+    molecule = "N2"
     s_mult = CAS[1][0]-CAS[1][1]
     nel_CAS = CAS[1][0] + CAS[1][1]
 
@@ -373,90 +375,108 @@ def main():
 
 
     # loop over all configurations and diagonalize
-    num_orb = CAS[0]
-    energy_dic = {}
-    for num_elec in range(num_orb+1):
-        for i in range(num_elec+1):
-            alpha_elec = i
-            beta_elec = num_elec - i
-            CAS_FCI = (num_orb, (alpha_elec, beta_elec))
-            print("Run calculation with configuration:",CAS_FCI)
-            if num_elec != 0:
-                energy_level = run_FCI_calcuation(h_core, eri_integral, CAS_FCI, E_core, NR_energy)
-                energy_dic[(CAS_FCI)] = energy_level
-            else:
-                print("GS energy:", E_core + NR_energy)
-                energy_dic[(CAS_FCI)] = np.array([E_core + NR_energy])
+    if False:
+        num_orb = CAS[0]
+        energy_dic = {}
+        for num_elec in range(2*num_orb+1):
+            for i in range(num_elec+1):
+                alpha_elec = i
+                beta_elec = num_elec - i
+                if alpha_elec <= num_orb and beta_elec <= num_orb:
+                    CAS_FCI = (num_orb, (alpha_elec, beta_elec))
+                    print("Run calculation with configuration:",CAS_FCI)
+                    if num_elec != 0:
+                        energy_level = run_FCI_calcuation(h_core, eri_integral, CAS_FCI, E_core, NR_energy)
+                        energy_dic[(CAS_FCI)] = energy_level
+                    else:
+                        print("GS energy:", E_core + NR_energy)
+                        energy_dic[(CAS_FCI)] = np.array([E_core + NR_energy])
+                else:
+                    pass
 
-    for key in energy_dic.keys():
-        print("Configuration:", key)
-        print("GS energy: ", energy_dic[key][0])
+        for key in energy_dic.keys():
+         print("Configuration:", key)
+         print("GS energy: ", energy_dic[key][0])
+         # store FCI energy data
+         with open('{:}_energy_data.pkl'.format(molecule), 'wb') as f:
+             pickle.dump(energy_dic, f)
+
+    else:
+         with open('{:}_energy_data.pkl'.format(molecule), 'rb') as f:
+             energy_dic = pickle.load(f)
 
     # renormalize the energy
     const = 0
     for key in energy_dic.keys():
-        if energy_dic[key].min() < const:
-            const = energy_dic[key].min()
+     if energy_dic[key].min() < const:
+         const = energy_dic[key].min()
     for key in energy_dic.keys():
-        energy_dic[key] -= const
+         energy_dic[key] -= const
+
 
     # calcuate grand canonical partition function
-    T = np.linspace(1e3, 1e7, int(1e3))
+    T = np.linspace(1e3, 1e7, int(1e2))
     data = {
       "T(K)": T,
        "Z":[],
        "E":[],
        "n_el":[],
           }
-     # print(T.shape)
     Kb = 3.1668152e-06 # Boltzmann constant Hartree K-1
-    # initial_guess = 0
-    # mu_space = np.linspace(-10,10,1000)
+    # test the initial guess range of mu
+    if True:
+         # print(T.shape)
+        initial_guess = 0
+        mu_space = np.linspace(-100,50,1000)
 
-    # def cal_z(energy, X, beta):
-        # """
-        # calculate grand canonical partition function
-        # """
-        # Z = 0
-        # for key in energy.keys():
-            # n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
-            # Z += np.exp(X * n_el) * sum(np.exp(-beta * energy[key]))
-        # return Z
-#
-    # def cal_n(energy, X, beta):
-        # """
-        # calculate <n>
-        # """
-        # Z = cal_z(energy, X, beta)
-        # n_avg = 0
-        # for key in energy.keys():
-            # n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
-            # n_avg += np.exp(X * n_el) * n_el * sum(np.exp(-beta * energy[key]))
-        # n_avg /= Z
-        # return Z, n_avg
-    # import matplotlib.pyplot as plt
-#
-    # n_space = []
-    # beta = 1. / (Kb * 1e6)
-    # for mu in mu_space:
-        # z, n = cal_n(energy_dic, mu, beta)
-        # n_space.append(n)
-#
-    # plt.plot(mu_space, n_space)
-    # plt.show()
-    # os.exit(0)
+        def cal_z(energy, X, beta):
+            """
+            calculate grand canonical partition function
+            """
+            Z = 0
+            for key in energy.keys():
+                n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
+                # print("n_el:", n_el)
+                Z += np.exp(X * n_el) * sum(np.exp(-beta * energy[key]))
+            return Z
+
+        def cal_n(energy, X, beta):
+            """
+            calculate <n>
+            """
+            Z = cal_z(energy, X, beta)
+            n_avg = 0
+            for key in energy.keys():
+                n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
+                n_avg += np.exp(X * n_el) * n_el * sum(np.exp(-beta * energy[key]))
+            n_avg /= Z
+            return Z, n_avg
+        import matplotlib.pyplot as plt
+
+        n_space = []
+        beta = 1. / (Kb * 5e3)
+        for mu in mu_space:
+            z, n = cal_n(energy_dic, mu, beta)
+            n_space.append(n)
+
+        plt.plot(mu_space, n_space)
+        # plt.ylim(0, 16)
+        plt.show()
+        os._exit(0)
     for temperature in T:
          # calculate Boltzmann factor
          beta = 1. / (Kb * temperature)
          if molecule == "O2":
-             if temperature > 1e4 and temperature < 5e4:
-                 mu_range = np.linspace(-10, 0, 1000)
-             elif temperature > 5e4:
-                 mu_range = np.linspace(-1, 0, 1000)
-             else:
-                 mu_range = np.linspace(-200, 200, 1000)
+             # mu_range = np.zeros(2)
+             mu_range = (-200, 20, 1000)
+             # if temperature > 1e4 and temperature < 5e4:
+                 # mu_range = np.linspace(-10, 0, 1000)
+             # elif temperature > 5e4:
+                 # mu_range = np.linspace(-1, 0, 1000)
+             # else:
+                 # mu_range = np.linspace(-200, 200, 1000)
          elif molecule == "N2":
-             mu_range = np.linspace(0, 100, 1000)
+             mu_range = np.linspace(-100, 100, 10000)
          else:
              assert False, "Opps! We don not have the mu range for that molecule!"
          mu , n_avg= cal_chemical_potential(mu_range, beta, energy_dic, nel_CAS)
