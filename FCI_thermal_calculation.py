@@ -192,25 +192,26 @@ def cal_chemical_potential(mu_range, beta, energy, total_nel, max_threshold=1000
     implement a Newtonian procedure to calculate the chemical potential
     """
 
-    def cal_z(mu):
+    def cal_z(mu_input):
         """
         calculate grand canonical partition function
         """
         Z = 0
         for key in energy.keys():
             n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
-            Z += np.exp(mu * n_el) * sum(np.exp(-beta * energy[key]))
+            Z += np.exp(mu_input * n_el) * sum(np.exp(-beta * energy[key]))
         return Z
 
-    def cal_n(mu):
+    def cal_n(mu_input):
         """
         calculate <n>
         """
-        Z = cal_z(mu)
+        # print("Beta",beta)
+        Z = cal_z(mu_input)
         n_avg = 0
         for key in energy.keys():
             n_el = key[1][0] + key[1][1] # total # of electron = alpha + beta
-            n_avg += np.exp(mu * n_el) * n_el * sum(np.exp(-beta * energy[key]))
+            n_avg += np.exp(mu_input * n_el) * n_el * sum(np.exp(-beta * energy[key]))
         n_avg /= Z
         return Z, n_avg
 
@@ -249,13 +250,15 @@ def cal_chemical_potential(mu_range, beta, energy, total_nel, max_threshold=1000
             dn_temp -= n_temp * n_el  * np.exp(mu * n_el) * sum(np.exp(-beta * energy[key]))
             dn_temp /= z_temp
         return dn_temp
+
+    # print("Beta:", beta)
     initial_guess = form_initial_guess()
     X =  initial_guess# intialize the chemical potential (X = mu * beta) to be zero
     z_temp, n_temp = cal_n(X) # initialize partition function and <n>
-    print("intial <n>:{:f}".format(n_temp))
+    # print("intial <n>:{:f}".format(n_temp))
     # iteratively update mu
     i = 0
-    while( not (np.allclose(total_nel, n_temp, atol=1e-4, rtol=1e-5))):
+    while( not (np.allclose(total_nel, n_temp, atol=1e-3, rtol=1e-4))):
         k = cal_dn(X)
         X = (total_nel - n_temp) / k + X
         z_temp, n_temp = cal_n(X) # update partition function and <n>
@@ -263,20 +266,23 @@ def cal_chemical_potential(mu_range, beta, energy, total_nel, max_threshold=1000
         # print("Iteration{:d}:".format(i))
         # print("beta*mu={:f}".format(X))
         # print("n_avg - n_el:", total_nel-n_temp)
-        if np.allclose(total_nel, n_temp, atol=1e-4, rtol=1e-5):
+        if np.allclose(total_nel, n_temp, atol=1e-3, rtol=1e-4):
             print("Newtonian procedure converged in {:d} iteration".format(i))
 
         if math.isnan(X):
             print("***Warning: Newtonian procedure break, return its initial value!")
             X = initial_guess
+            print("Final n_avg:{:f}".format(n_temp))
             z_temp, n_temp = cal_n(X)
             print("Terminate at iteration {:d}, n_avg:{:f}".format(i, n_temp))
             break
 
         if i > max_threshold:
             print("***Warning: Newtonian procedure do not converge within {:d} iteration, returen its initial value".format(max_threshold))
+            print("Final n_avg:{:f}".format(n_temp))
             X = initial_guess
-            # print("n_avg - n_el:", total_nel-n_temp)
+            z_temp, n_temp = cal_n(X)
+            print("Terminate at iteration {:d}, n_avg:{:f}".format(i, n_temp))
             break
 
     return X, n_temp
@@ -342,11 +348,12 @@ def main():
     CAS_HF = (4, 6)
     CAS_O2 = (8, (4, 2))
 
-    CAS = CAS_N2
-    atom = N2
-    molecule = "N2"
+    CAS = CAS_O2
+    atom = O2
+    molecule = "O2"
     s_mult = CAS[1][0]-CAS[1][1]
     nel_CAS = CAS[1][0] + CAS[1][1]
+    print("Number of electrons in CAS:", nel_CAS)
 
     molecular_HF = gto.M(
            atom=atom,  # in Angstrom
@@ -415,7 +422,7 @@ def main():
 
 
     # calcuate grand canonical partition function
-    T = np.linspace(1e3, 1e7, int(1e2))
+    T = np.linspace(1e3, 1e7, int(1e3))
     data = {
       "T(K)": T,
        "Z":[],
@@ -424,10 +431,10 @@ def main():
           }
     Kb = 3.1668152e-06 # Boltzmann constant Hartree K-1
     # test the initial guess range of mu
-    if True:
+    if False:
          # print(T.shape)
         initial_guess = 0
-        mu_space = np.linspace(-100,50,1000)
+        mu_space = np.linspace(-2,2,2000)
 
         def cal_z(energy, X, beta):
             """
@@ -454,21 +461,29 @@ def main():
         import matplotlib.pyplot as plt
 
         n_space = []
-        beta = 1. / (Kb * 5e3)
+        # E_space = []
+        beta = 1. / (Kb * 8338504.504505)
         for mu in mu_space:
             z, n = cal_n(energy_dic, mu, beta)
+            # z, E = cal_grand_canonical_thermal(beta, energy_dic, mu)
             n_space.append(n)
+            # E_space.append(E)
 
         plt.plot(mu_space, n_space)
-        # plt.ylim(0, 16)
+        # plt.plot(mu_space, E_space)
+        plt.ylim(0, 16)
         plt.show()
         os._exit(0)
+    else:
+        pass
+
     for temperature in T:
          # calculate Boltzmann factor
          beta = 1. / (Kb * temperature)
+         # print("Beta:", beta)
          if molecule == "O2":
              # mu_range = np.zeros(2)
-             mu_range = (-200, 20, 1000)
+             mu_range = np.linspace(-2, 2, 200)
              # if temperature > 1e4 and temperature < 5e4:
                  # mu_range = np.linspace(-10, 0, 1000)
              # elif temperature > 5e4:
@@ -476,13 +491,14 @@ def main():
              # else:
                  # mu_range = np.linspace(-200, 200, 1000)
          elif molecule == "N2":
-             mu_range = np.linspace(-100, 100, 10000)
+             mu_range = np.linspace(-10, 10, 2000)
          else:
              assert False, "Opps! We don not have the mu range for that molecule!"
-         mu , n_avg= cal_chemical_potential(mu_range, beta, energy_dic, nel_CAS)
+         mu , n_avg = cal_chemical_potential(mu_range, beta, energy_dic, nel_CAS)
          # initial_guess = mu
          print("At T = {:f} K".format(temperature))
-         print("Converge chemical potential:", mu)
+         print("Converged chemical potential:", mu)
+         print("Converged n_avg:", n_avg)
          part, inter_e = cal_grand_canonical_thermal(beta, energy_dic, mu)
          data["Z"].append(part)
          data["E"].append(inter_e+const)
