@@ -384,9 +384,9 @@ def main():
     n_state_ArO2 = 9
     n_state_ArON = 3
 
-    CAS = CAS_ArON
-    atom = ArON_shrink
-    molecule = "ArON_shrink"
+    CAS = CAS_ArO2
+    atom = ArO2
+    molecule = "ArO2"
     s_mult = CAS[1][0]-CAS[1][1]
     nel_CAS = CAS[1][0] + CAS[1][1]
     print("Number of electrons in CAS:", nel_CAS)
@@ -407,14 +407,14 @@ def main():
 
     # run CASSCF calculation
     if True:
-        n_states = n_state_ArON
+        n_states = n_state_ArO2
         weights = np.ones(n_states)/n_states
         mycas = mcscf.CASSCF(mean_field, CAS[0], CAS[1]).state_average_(weights)
     else:
         mycas = mean_field.CASSCF(CAS[0], CAS[1])
     mycas.natorb = True
     mycas.kernel()
-    os._exit(0)
+    # os._exit(0)
     # get Nuclear Repusion Energy
     NR_energy = mycas.energy_nuc()
     # extract effective model Hamiltonian from the CASSCF calcuation
@@ -425,7 +425,7 @@ def main():
 
 
     # loop over all configurations and diagonalize
-    if True:
+    if False:
         num_orb = CAS[0]
         energy_dic = {}
         for num_elec in range(2*num_orb+1):
@@ -463,6 +463,8 @@ def main():
     for key in energy_dic.keys():
          energy_dic[key] -= const
 
+    print("lowest energy:", const )
+
 
     # calcuate grand canonical partition function
     T = np.linspace(1e3, 1e7, int(1e3))
@@ -474,10 +476,10 @@ def main():
           }
     Kb = 3.1668152e-06 # Boltzmann constant Hartree K-1
     # test the initial guess range of mu
-    if False:
+    if True:
          # print(T.shape)
         initial_guess = 0
-        mu_space = np.linspace(-100,100,2000)
+        mu_space = np.linspace(-10,10,2000)
 
         def cal_z(energy, X, beta):
             """
@@ -503,18 +505,19 @@ def main():
             return Z, n_avg
         import matplotlib.pyplot as plt
 
-        n_space = []
-        # E_space = []
-        beta = 1. / (Kb * 1e7)
+        # n_space = []
+        E_space = []
+        beta = 1. / (Kb * 1e3)
         for mu in mu_space:
-            z, n = cal_n(energy_dic, mu, beta)
-            # z, E = cal_grand_canonical_thermal(beta, energy_dic, mu)
-            n_space.append(n)
-            # E_space.append(E)
+            # z, n = cal_n(energy_dic, mu, beta)
+            z, E = cal_grand_canonical_thermal(beta, energy_dic, mu)
+            # n_space.append(n)
+            E_space.append(E+const)
 
-        plt.plot(mu_space, n_space)
-        # plt.plot(mu_space, E_space)
-        # plt.ylim(0, 16)
+        # plt.plot(mu_space, n_space)
+        plt.plot(mu_space, E_space)
+        # print(E_space+const)
+        plt.ylim(-656, -655)
         plt.show()
         os._exit(0)
     else:
@@ -544,6 +547,7 @@ def main():
          print("Converged chemical potential:", mu)
          print("Converged n_avg:", n_avg)
          part, inter_e = cal_grand_canonical_thermal(beta, energy_dic, mu)
+         print("Internal energy:", inter_e + const)
          data["Z"].append(part)
          data["E"].append(inter_e+const)
          data["n_el"].append(n_avg)
