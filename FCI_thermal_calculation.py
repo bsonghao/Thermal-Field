@@ -343,14 +343,50 @@ def main():
 
     N2 = 'N 0 0 0; N 0 0 1.1'
 
+    ArO2 = '''
+    Ar	0.00000000 0.00000000 1.21050536
+    O  -1.29289612 0.00000000 -1.27312498
+    O	1.29289612 0.00000000 -1.27312498
+    '''
+
+    ArON = '''
+    Ar	0.00000000 0.00000000 1.21050536
+    O  -1.29289612 0.00000000 -1.27312498
+    N	1.29289612 0.00000000 -1.27312498
+    '''
+    ArN2 = '''
+    Ar	0.00000000 0.00000000 1.21050536
+    N  -1.29289612 0.00000000 -1.27312498
+    N	1.29289612 0.00000000 -1.27312498
+    '''
+
+    ArON_shrink = '''
+    Ar	0.00000000 0.00000000 1.089454824
+    O  -1.163606508 0.00000000 -1.145812482
+    N	1.163606508 0.00000000 1.145812482
+    '''
+    ArO2_shrink = '''
+    Ar	0.00000000 0.00000000 0.60525268
+    O  -0.64644806 0.00000000 -0.63656249
+    O	0.64644806 0.00000000 0.63656249
+    '''
+
+    # active space of molecules
+    CAS_ArN2 = (6, (6, 0))
+    CAS_ArON = (6, (6, 1))
+    CAS_ArO2 = (6, (6, 2))
+
     # active space of molecules
     CAS_N2 = (6, (3, 3))
     CAS_HF = (4, 6)
     CAS_O2 = (8, (4, 2))
 
-    CAS = CAS_O2
-    atom = O2
-    molecule = "O2"
+    n_state_ArO2 = 9
+    n_state_ArON = 3
+
+    CAS = CAS_ArON
+    atom = ArON_shrink
+    molecule = "ArON_shrink"
     s_mult = CAS[1][0]-CAS[1][1]
     nel_CAS = CAS[1][0] + CAS[1][1]
     print("Number of electrons in CAS:", nel_CAS)
@@ -367,11 +403,18 @@ def main():
     # run RHF calculation
     mean_field = scf.RHF(molecular_HF).run()
 
+
+
     # run CASSCF calculation
-    mycas = mean_field.CASSCF(CAS[0], CAS[1])
+    if True:
+        n_states = n_state_ArON
+        weights = np.ones(n_states)/n_states
+        mycas = mcscf.CASSCF(mean_field, CAS[0], CAS[1]).state_average_(weights)
+    else:
+        mycas = mean_field.CASSCF(CAS[0], CAS[1])
     mycas.natorb = True
     mycas.kernel()
-
+    os._exit(0)
     # get Nuclear Repusion Energy
     NR_energy = mycas.energy_nuc()
     # extract effective model Hamiltonian from the CASSCF calcuation
@@ -382,7 +425,7 @@ def main():
 
 
     # loop over all configurations and diagonalize
-    if False:
+    if True:
         num_orb = CAS[0]
         energy_dic = {}
         for num_elec in range(2*num_orb+1):
@@ -434,7 +477,7 @@ def main():
     if False:
          # print(T.shape)
         initial_guess = 0
-        mu_space = np.linspace(-2,2,2000)
+        mu_space = np.linspace(-100,100,2000)
 
         def cal_z(energy, X, beta):
             """
@@ -462,7 +505,7 @@ def main():
 
         n_space = []
         # E_space = []
-        beta = 1. / (Kb * 8338504.504505)
+        beta = 1. / (Kb * 1e7)
         for mu in mu_space:
             z, n = cal_n(energy_dic, mu, beta)
             # z, E = cal_grand_canonical_thermal(beta, energy_dic, mu)
@@ -471,7 +514,7 @@ def main():
 
         plt.plot(mu_space, n_space)
         # plt.plot(mu_space, E_space)
-        plt.ylim(0, 16)
+        # plt.ylim(0, 16)
         plt.show()
         os._exit(0)
     else:
@@ -480,20 +523,21 @@ def main():
     for temperature in T:
          # calculate Boltzmann factor
          beta = 1. / (Kb * temperature)
+         mu_range = np.linspace(-10, 10, 2000)
          # print("Beta:", beta)
-         if molecule == "O2":
+         # if molecule == "O2":
              # mu_range = np.zeros(2)
-             mu_range = np.linspace(-2, 2, 200)
+             # mu_range = np.linspace(-2, 2, 200)
              # if temperature > 1e4 and temperature < 5e4:
                  # mu_range = np.linspace(-10, 0, 1000)
              # elif temperature > 5e4:
                  # mu_range = np.linspace(-1, 0, 1000)
              # else:
                  # mu_range = np.linspace(-200, 200, 1000)
-         elif molecule == "N2":
-             mu_range = np.linspace(-10, 10, 2000)
-         else:
-             assert False, "Opps! We don not have the mu range for that molecule!"
+         # elif molecule == "N2":
+             # mu_range = np.linspace(-10, 10, 2000)
+         # else:
+             # assert False, "Opps! We don not have the mu range for that molecule!"
          mu , n_avg = cal_chemical_potential(mu_range, beta, energy_dic, nel_CAS)
          # initial_guess = mu
          print("At T = {:f} K".format(temperature))
