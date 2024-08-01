@@ -60,6 +60,8 @@ def extract_Hamiltonian_parameters(mo_flag, CAS_SCF, mol_HF):
         return Fock_ground_state
 
     # get occupation number for CASSCF
+    print(CAS_SCF.mo_occ)
+    # os._exit(0)
     occupation_number = CAS_SCF.mo_occ / 2
 
     # calcuation number of orbatals
@@ -150,24 +152,50 @@ def main():
     mo_flag = True
 
     # geometry of molecules (in Angstrom)
-    HF = 'H 0 0 0; F 0 0 1.1'
+    ArO2 = '''
+    Ar	0.00000000 0.00000000 1.21050536
+    O  -1.29289612 0.00000000 -1.27312498
+    O	1.29289612 0.00000000 -1.27312498
+    '''
 
-    H2O = '''
-    O 0 0      0
-    H 0 -2.757 2.587
-    H 0  2.757 2.587'''
+    ArON = '''
+    Ar	0.00000000 0.00000000 1.21050536
+    O  -1.29289612 0.00000000 -1.27312498
+    N	1.29289612 0.00000000 -1.27312498
+    '''
+    ArN2 = '''
+    Ar	0.00000000 0.00000000 1.21050536
+    N  -1.29289612 0.00000000 -1.27312498
+    N	1.29289612 0.00000000 -1.27312498
+    '''
 
-    O2 = 'O 0 0 0; O 0 0 1.2'
-
-    N2 = 'N 0 0 0; N 0 0 1.1'
+    ArON_shrink = '''
+    Ar	0.00000000 0.00000000 1.089454824
+    O  -1.163606508 0.00000000 -1.145812482
+    N	1.163606508 0.00000000 1.145812482
+    '''
+    ArO2_shrink = '''
+    Ar	0.00000000 0.00000000 0.60525268
+    O  -0.64644806 0.00000000 -0.63656249
+    O	0.64644806 0.00000000 0.63656249
+    '''
 
     # active space of molecules
-    CAS_N2 = (6, 6)
-    CAS_HF = (4, 6)
-    CAS_O2 = (8, 6)
+    CAS_ArN2 = (6, (6, 0))
+    CAS_ArON = (6, (6, 1))
+    CAS_ArO2 = (6, (6, 2))
+    n_state_ArO2 = 9
+    n_state_ArN2 = 1
+    n_state_ArON = 3
 
-    atom = O2
-    molecule = "O2"
+    CAS = CAS_ArON
+    n_states = n_state_ArON
+    spin_mult = CAS[1][0]-CAS[1][1]
+    num_elec = CAS[1][0] + CAS[1][1]
+    print("spin multiplicity:", spin_mult+1)
+
+    atom = ArON_shrink
+    molecule = "ArON_shrink"
 
     # setup model input using gaussian-type-orbitals
     molecular_HF = gto.M(
@@ -175,21 +203,19 @@ def main():
            basis='ccpvdz',
            # basis="6-31g",
            symmetry=False,
-           spin=2
+           spin=spin_mult
     )
 
     # run HF calculation
     mean_field = scf.RHF(molecular_HF).run()
-    # 6 orbital, 6 electrons
-    mycas = mean_field.CASSCF(CAS_O2[0], CAS_O2[1])
+    weights = np.ones(n_states)/n_states
+    mycas = mcscf.CASSCF(mean_field, CAS[0], CAS[1]).state_average_(weights)
+    # mycas.verbose = 5
+    # mycas = mcscf.CASSCF(mean_field, CAS[0], CAS[1])
     mycas.natorb = True
-    # Here mycas.mo_coeff are natural orbitals because .natorb is on.
-    # Note The active space orbitals have the same symmetry as the input HF
-    # canonical orbitals.  They are not fully sorted wrt the occpancies.
-    # The mcscf active orbitals are sorted only within each irreps.
     mycas.kernel()
 
-    # os._exit(0)
+    os._exit(0)
     # extract parameter from the input Hamitonian and CAS-SCF calculation
     h_core, eri_integral, Fock_ground_state, E_core = \
     extract_Hamiltonian_parameters(mo_flag, mycas, molecular_HF)
@@ -201,8 +227,10 @@ def main():
     print("core electron energy (in Hartree):{:.5f}".format(E_core))
 
     # total number of electron
+    # print(mycas.mo_occ)
+    # os._exit(0)
     OccupationNumber = mycas.mo_occ / 2
-    nof_electron = 3
+    nof_electron = num_elec / 2
     print("total number of electrons:{:}".format(nof_electron))
     print("occupation number:\n{:}".format(OccupationNumber))
 
@@ -215,7 +243,7 @@ def main():
     # thermal field transform
     model.thermal_field_transform(T=1e8)
     # TFCC imaginary time integration
-    model.TFCC_integration(T_final=2e3, N=10000, direct_flag=True, exchange_flag=True, constraint_flag=True)
+    model.TFCC_integration(T_final=1e3, N=100000, direct_flag=True, exchange_flag=True, constraint_flag=True)
     # plot thermal properties
     # model.Plot_thermal()
 
