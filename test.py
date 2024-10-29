@@ -160,13 +160,16 @@ def main():
 
     N2 = 'N 0 0 0; N 0 0 1.1'
 
+    C2 = 'C 0 0 0; C 0 0 1.0'
+
     # active space of molecules
     CAS_N2 = (6, 6)
     CAS_HF = (4, 6)
     CAS_O2 = (8, 6)
+    CAS_C2 = (8, 8)
 
-    atom = O2
-    molecule = "O2"
+    atom = C2
+    molecule = "C2"
 
     # setup model input using gaussian-type-orbitals
     molecular_HF = gto.M(
@@ -180,7 +183,7 @@ def main():
     # run HF calculation
     mean_field = scf.RHF(molecular_HF).run()
     # 6 orbital, 6 electrons
-    mycas = mean_field.CASSCF(CAS_O2[0], CAS_O2[1])
+    mycas = mean_field.CASSCF(CAS_C2[0], CAS_C2[1])
     mycas.natorb = True
     # Here mycas.mo_coeff are natural orbitals because .natorb is on.
     # Note The active space orbitals have the same symmetry as the input HF
@@ -188,7 +191,7 @@ def main():
     # The mcscf active orbitals are sorted only within each irreps.
     mycas.kernel()
 
-    os._exit(0)
+    # os._exit(0)
     # extract parameter from the input Hamitonian and CAS-SCF calculation
     h_core, eri_integral, Fock_ground_state, E_core = \
     extract_Hamiltonian_parameters(mo_flag, mycas, molecular_HF)
@@ -201,7 +204,7 @@ def main():
 
     # total number of electron
     OccupationNumber = mycas.mo_occ / 2
-    nof_electron = 3
+    nof_electron = 4
     print("total number of electrons:{:}".format(nof_electron))
     print("occupation number:\n{:}".format(OccupationNumber))
 
@@ -214,7 +217,7 @@ def main():
     # thermal field transform
     model.thermal_field_transform(T=1e8)
     # TFCC imaginary time integration
-    model.TFCC_integration(T_final=2e3, N=10000, direct_flag=False, exchange_flag=False, constraint_flag=False)
+    model.TFCC_integration(T_final=2e3, N=10000, direct_flag=True, exchange_flag=True, constraint_flag=True)
     # plot thermal properties
     # model.Plot_thermal()
 
