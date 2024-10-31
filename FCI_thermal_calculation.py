@@ -258,7 +258,7 @@ def cal_chemical_potential(mu_range, beta, energy, total_nel, max_threshold=1000
     # print("intial <n>:{:f}".format(n_temp))
     # iteratively update mu
     i = 0
-    while( not (np.allclose(total_nel, n_temp, atol=1e-3, rtol=1e-4))):
+    while( not (np.allclose(total_nel, n_temp, atol=1e-2, rtol=1e-3))):
         k = cal_dn(X)
         X = (total_nel - n_temp) / k + X
         z_temp, n_temp = cal_n(X) # update partition function and <n>
@@ -266,7 +266,7 @@ def cal_chemical_potential(mu_range, beta, energy, total_nel, max_threshold=1000
         # print("Iteration{:d}:".format(i))
         # print("beta*mu={:f}".format(X))
         # print("n_avg - n_el:", total_nel-n_temp)
-        if np.allclose(total_nel, n_temp, atol=1e-3, rtol=1e-4):
+        if np.allclose(total_nel, n_temp, atol=1e-2, rtol=1e-3):
             print("Newtonian procedure converged in {:d} iteration".format(i))
 
         if math.isnan(X):
@@ -325,7 +325,21 @@ def cal_grand_canonical_thermal(beta, energy, chemical_potential):
     E = sum(temp * boltzmann_factor) / Z
     E += const
     return Z, E
-
+def cal_specific_heat(beta, energy, chemical_potential, delta_T=1e-3):
+    """calcuate specific heat from numerical energy derivative"""
+    kB = 3.1668152e-06
+    T_0 = 1. / (beta*kB)
+    T_minus = T_0 - delta_T
+    T_plus = T_0 + delta_T
+    beta_minus = 1. / (kB*T_minus)
+    beta_plus = 1. / (kB*T_plus)
+    # calcuate energy at T-delta_T
+    Z, E_minus = cal_grand_canonical_thermal(beta_minus, energy, chemical_potential)
+    # calcuate energy at T+delta_T
+    Z, E_plus = cal_grand_canonical_thermal(beta_plus, energy, chemical_potential)
+    # evulate numerical energy derivate
+    Cv = (E_plus -  E_minus) / (2 * delta_T)
+    return Cv
 
 def main():
     # perform CASSCF calcuations
@@ -371,6 +385,11 @@ def main():
     O	0.64644806 0.00000000 0.63656249
     '''
 
+    C2 = '''
+    C 0.0 0.0 0.0
+    C 0.0 0.0 5.0
+    '''
+
     # active space of molecules
     CAS_ArN2 = (6, (6, 0))
     CAS_ArON = (6, (6, 1))
@@ -380,13 +399,18 @@ def main():
     CAS_N2 = (6, (3, 3))
     CAS_HF = (4, 6)
     CAS_O2 = (8, (4, 2))
+    CAS_C2 = (8, (5, 3))
 
     n_state_ArO2 = 9
     n_state_ArON = 3
+    n_state_C2 = 18
 
-    CAS = CAS_ArO2
-    atom = ArO2
-    molecule = "ArO2"
+    # CAS = CAS_ArON
+    # atom = ArON_shrink
+    # molecule = "ArON"
+    CAS = CAS_C2
+    atom = C2
+    molecule = "C2"
     s_mult = CAS[1][0]-CAS[1][1]
     nel_CAS = CAS[1][0] + CAS[1][1]
     print("Number of electrons in CAS:", nel_CAS)
@@ -407,7 +431,7 @@ def main():
 
     # run CASSCF calculation
     if True:
-        n_states = n_state_ArO2
+        n_states = n_state_C2
         weights = np.ones(n_states)/n_states
         mycas = mcscf.CASSCF(mean_field, CAS[0], CAS[1]).state_average_(weights)
     else:
@@ -420,12 +444,13 @@ def main():
     # extract effective model Hamiltonian from the CASSCF calcuation
     h_core, eri_integral, Fock_ground_state, E_core = \
     extract_Hamiltonian_parameters(mo_flag, mycas, molecular_HF)
+    # os._exit(0)
 
 
 
 
     # loop over all configurations and diagonalize
-    if False:
+    if True:
         num_orb = CAS[0]
         energy_dic = {}
         for num_elec in range(2*num_orb+1):
@@ -465,21 +490,21 @@ def main():
 
     print("lowest energy:", const )
 
-
     # calcuate grand canonical partition function
-    T = np.linspace(1e3, 1e7, int(1e3))
+    T = np.linspace(1, 300, int(1e2))
     data = {
       "T(K)": T,
        "Z":[],
        "E":[],
        "n_el":[],
+       "Cv": [],
           }
     Kb = 3.1668152e-06 # Boltzmann constant Hartree K-1
     # test the initial guess range of mu
-    if True:
+    if False:
          # print(T.shape)
         initial_guess = 0
-        mu_space = np.linspace(-10,10,2000)
+        mu_space = np.linspace(-5,5,100)
 
         def cal_z(energy, X, beta):
             """
@@ -505,19 +530,19 @@ def main():
             return Z, n_avg
         import matplotlib.pyplot as plt
 
-        # n_space = []
+        n_space = []
         E_space = []
-        beta = 1. / (Kb * 1e3)
+        beta = 1. / (Kb * 1e2)
         for mu in mu_space:
-            # z, n = cal_n(energy_dic, mu, beta)
+            z, n = cal_n(energy_dic, mu, beta)
             z, E = cal_grand_canonical_thermal(beta, energy_dic, mu)
-            # n_space.append(n)
+            n_space.append(n)
             E_space.append(E+const)
 
-        # plt.plot(mu_space, n_space)
-        plt.plot(mu_space, E_space)
+        plt.plot(mu_space, n_space)
+        # plt.plot(mu_space, E_space)
         # print(E_space+const)
-        plt.ylim(-656, -655)
+        # plt.ylim(-656, -655)
         plt.show()
         os._exit(0)
     else:
@@ -526,7 +551,15 @@ def main():
     for temperature in T:
          # calculate Boltzmann factor
          beta = 1. / (Kb * temperature)
-         mu_range = np.linspace(-10, 10, 2000)
+         # if temperature < 60000:
+             # mu_range = np.linspace(-10, 0, 1000)
+         # elif temperature > 401360.360360 and temperature < 901810.0:
+             # mu_range = np.linspace(0, 1, 500)
+         # elif temperature > 901810.0:
+             # mu_range = np.linspace(0, 0.01, 100)
+         # else:
+             # mu_range = np.linspace(-1, 0, 500)
+         mu_range = np.linspace(-5, 5, 100)
          # print("Beta:", beta)
          # if molecule == "O2":
              # mu_range = np.zeros(2)
@@ -546,14 +579,20 @@ def main():
          print("At T = {:f} K".format(temperature))
          print("Converged chemical potential:", mu)
          print("Converged n_avg:", n_avg)
+         # calcuate partition function and thermal internal energy
          part, inter_e = cal_grand_canonical_thermal(beta, energy_dic, mu)
+         # calcuate specific heat by taking the numerical derivative
+         Cv = cal_specific_heat(beta, energy_dic, mu)
+
          print("Internal energy:", inter_e + const)
+         print("specific heat:", Cv)
          data["Z"].append(part)
          data["E"].append(inter_e+const)
          data["n_el"].append(n_avg)
+         data["Cv"].append(Cv)
      # store thermal data
     df = pd.DataFrame(data)
-    df.to_csv("{:}_FCI_fix_grand_canonical_thermal_data.csv".format(molecule))
+    df.to_csv("{:}_FCI_fix_grand_canonical_thermal_data_low_T.csv".format(molecule))
 
     # calcuate canonical partition function
     # T = np.linspace(1e3, 1e6, int(1e5))
