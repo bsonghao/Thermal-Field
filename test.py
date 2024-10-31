@@ -183,7 +183,14 @@ def main():
     # run HF calculation
     mean_field = scf.RHF(molecular_HF).run()
     # 6 orbital, 6 electrons
-    mycas = mean_field.CASSCF(CAS_C2[0], CAS_C2[1])
+    # run CASSCF calculation
+    if True:
+        n_states = 18
+        weights = np.ones(n_states)/n_states
+        mycas = mcscf.CASSCF(mean_field, CAS_C2[0], CAS_C2[1]).state_average_(weights)
+    else:
+        mycas = mean_field.CASSCF(CAS_C2[0], CAS_C2[1])
+    # mycas = mean_field.CASSCF(CAS_C2[0], CAS_C2[1])
     mycas.natorb = True
     # Here mycas.mo_coeff are natural orbitals because .natorb is on.
     # Note The active space orbitals have the same symmetry as the input HF
@@ -217,7 +224,7 @@ def main():
     # thermal field transform
     model.thermal_field_transform(T=1e8)
     # TFCC imaginary time integration
-    model.TFCC_integration(T_final=2e3, N=10000, direct_flag=True, exchange_flag=True, constraint_flag=True)
+    model.TFCC_integration(T_final=3e2, N=10000, direct_flag=True, exchange_flag=True, constraint_flag=True)
     # plot thermal properties
     # model.Plot_thermal()
 
